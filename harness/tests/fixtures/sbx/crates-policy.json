@@ -1,0 +1,95 @@
+{
+  "rules": [
+    {
+      "id": "default-fs-read-allow-all",
+      "name": "default-fs-read-allow-all",
+      "policy_id": "local-policy",
+      "scope": "global",
+      "applies_to": "all",
+      "resource_type": "filesystem:read",
+      "decision": "allow",
+      "resources": [
+        "**"
+      ],
+      "origin": "local",
+      "layer": "local",
+      "status": "active",
+      "editable": false,
+      "provenance": {
+        "created_via": "default"
+      },
+      "actions": [
+        "fs:mount:read"
+      ]
+    },
+    {
+      "id": "default-fs-write-allow-all",
+      "name": "default-fs-write-allow-all",
+      "policy_id": "local-policy",
+      "scope": "global",
+      "applies_to": "all",
+      "resource_type": "filesystem:write",
+      "decision": "allow",
+      "resources": [
+        "**"
+      ],
+      "origin": "local",
+      "layer": "local",
+      "status": "active",
+      "editable": false,
+      "provenance": {
+        "created_via": "default"
+      },
+      "actions": [
+        "fs:mount:read",
+        "fs:mount:write"
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "name": "00000000-0000-4000-8000-000000000002",
+      "policy_id": "00000000-0000-4000-8000-000000000099",
+      "scope": "sandbox:bench-observed",
+      "applies_to": "sandbox:bench-observed",
+      "resource_type": "network",
+      "decision": "allow",
+      "resources": [
+        "index.crates.io:443"
+      ],
+      "origin": "scoped",
+      "layer": "local",
+      "status": "active",
+      "editable": true,
+      "sandbox_id": "bench-observed",
+      "provenance": {
+        "created_via": "added"
+      },
+      "actions": [
+        "net:connect:tcp"
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "name": "00000000-0000-4000-8000-000000000003",
+      "policy_id": "00000000-0000-4000-8000-000000000099",
+      "scope": "sandbox:bench-observed",
+      "applies_to": "sandbox:bench-observed",
+      "resource_type": "network",
+      "decision": "allow",
+      "resources": [
+        "static.crates.io:443"
+      ],
+      "origin": "scoped",
+      "layer": "local",
+      "status": "active",
+      "editable": true,
+      "sandbox_id": "bench-observed",
+      "provenance": {
+        "created_via": "added"
+      },
+      "actions": [
+        "net:connect:tcp"
+      ]
+    }
+  ]
+}

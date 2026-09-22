@@ -1,0 +1,160 @@
+{
+  "workspace_empty": true,
+  "personal_state_absent": true,
+  "ssh_socket_present": true,
+  "host_socket_present": false,
+  "environment_keys": [
+    "ANTHROPIC_API_KEY",
+    "BASH_ENV",
+    "CARGO_HOME",
+    "CARGO_REGISTRIES_CRATES_IO_PROTOCOL",
+    "CLAUDE_CODE_DISABLE_LEGACY_MODEL_REMAP",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+    "DISABLE_AUTOUPDATER",
+    "GH_TOKEN",
+    "GOOGLE_API_KEY",
+    "HOME",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "JAVA_TOOL_OPTIONS",
+    "LANG",
+    "LC_ALL",
+    "MCP_GATEWAY_URL",
+    "MCP_SENTINEL_TOKEN_NAME",
+    "MISTRAL_API_KEY",
+    "NEBIUS_API_KEY",
+    "NODE_EXTRA_CA_CERTS",
+    "NODE_USE_ENV_PROXY",
+    "NO_PROXY",
+    "NPM_CONFIG_PREFIX",
+    "OPENAI_API_KEY",
+    "OPENROUTER_API_KEY",
+    "PATH",
+    "PROXY_CA_CERT_B64",
+    "REQUESTS_CA_BUNDLE",
+    "RUSTUP_HOME",
+    "SANDBOX_ID",
+    "SANDBOX_NAME",
+    "SANDBOX_VM_ID",
+    "SBX_CRED_ANTHROPIC_MODE",
+    "SBX_CRED_GITHUB_MODE",
+    "SBX_CRED_GOOGLE_MODE",
+    "SBX_CRED_MISTRAL_MODE",
+    "SBX_CRED_NEBIUS_MODE",
+    "SBX_CRED_OPENAI_MODE",
+    "SBX_CRED_OPENROUTER_MODE",
+    "SBX_CRED_XAI_MODE",
+    "SSH_AUTH_SOCK",
+    "SSH_AUTH_SOCK_GATEWAY",
+    "SSL_CERT_FILE",
+    "TERM",
+    "WAYLAND_DISPLAY",
+    "WORKSPACE_DIR",
+    "XAI_API_KEY",
+    "XDG_RUNTIME_DIR",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy"
+  ],
+  "cpus": 2,
+  "runtime_storage": {},
+  "memory_bytes": 2084425728,
+  "storage": [
+    {
+      "device": 0,
+      "bytes": 2040373248
+    },
+    {
+      "device": 0,
+      "bytes": 2040373248
+    },
+    {
+      "device": 0,
+      "bytes": 2040373248
+    },
+    {
+      "device": 0,
+      "bytes": 2040373248
+    }
+  ],
+  "rust": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "architecture": "x86_64",
+  "mounts": {
+    "filesystems": [
+      {
+        "target": "/",
+        "source": "overlay",
+        "fstype": "overlay",
+        "options": "rw,relatime,lowerdir=/run/bundles/normalized/mounts/1,upperdir=/run/bundles/normalized/mounts/0/upper",
+        "children": [
+          {
+            "target": "/proc",
+            "source": "proc",
+            "fstype": "proc",
+            "options": "rw,nosuid,nodev,noexec,relatime"
+          },
+          {
+            "target": "/dev",
+            "source": "tmpfs",
+            "fstype": "tmpfs",
+            "options": "rw,nosuid,size=65536k,mode=755",
+            "children": [
+              {
+                "target": "/dev/pts",
+                "source": "devpts",
+                "fstype": "devpts",
+                "options": "rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=666"
+              },
+              {
+                "target": "/dev/shm",
+                "source": "shm",
+                "fstype": "tmpfs",
+                "options": "rw,nosuid,nodev,noexec,relatime,size=65536k"
+              },
+              {
+                "target": "/dev/mqueue",
+                "source": "mqueue",
+                "fstype": "mqueue",
+                "options": "rw,nosuid,nodev,noexec,relatime"
+              }
+            ]
+          },
+          {
+            "target": "/sys",
+            "source": "sysfs",
+            "fstype": "sysfs",
+            "options": "ro,nosuid,nodev,noexec,relatime",
+            "children": [
+              {
+                "target": "/sys/fs/cgroup",
+                "source": "cgroup2",
+                "fstype": "cgroup2",
+                "options": "ro,nosuid,nodev,noexec,relatime"
+              }
+            ]
+          },
+          {
+            "target": "/run",
+            "source": "tmpfs",
+            "fstype": "tmpfs",
+            "options": "rw,nosuid,size=65536k,mode=755",
+            "children": [
+              {
+                "target": "/run/secrets",
+                "source": "tmpfs",
+                "fstype": "tmpfs",
+                "options": "rw,nosuid,noexec,relatime"
+              }
+            ]
+          },
+          {
+            "target": "/etc/resolv.conf",
+            "source": "bind-normalized[/resolv.conf]",
+            "fstype": "virtiofs",
+            "options": "ro,relatime"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+schema_version = 1
+version = "spaceship-v1"
+environment = "linux-rust-v2"
+launch = ["cargo", "run", "--release", "--locked"]
+play_launch = ["cargo", "run", "--release", "--frozen"]
+workspace = "/workspace"
+columns = 120
+rows = 40
+term = "xterm-256color"
+locale = "C.UTF-8"
+dependencies = "crates.io-only"

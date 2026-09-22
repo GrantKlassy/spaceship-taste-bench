@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "environment": "linux-rust-v1",
+  "verified_at": "2026-09-21",
+  "rust_version": "1.97.0",
+  "backend_version": "0.45.0",
+  "upstream": {
+    "shell": "docker.io/docker/sandbox-templates:shell@sha256:da4458d89a5f739df50a2a334c08a3d15f15e11f0024bf47b37c88ad348a4644",
+    "rust": "docker.io/library/rust:1.97.0-slim-bookworm@sha256:6d220bf85c74e842a79da63997af8d2e74455c0b8847d8bb3a5888572334991d",
+    "shell_amd64": "sha256:16a88c7321c130de9aa8410ffd0865ea22dd051ebb7f58103fbf41ec50057476",
+    "shell_arm64": "sha256:8766d7a1514400bbcd732e667f6d96922d83e7af67897daa21f2751c96df82b0",
+    "rust_amd64": "sha256:b07b1bc9cb80ea8f48f304fe469feb759f54cfd30c6ec545a1b0ec3af822daf0",
+    "rust_arm64": "sha256:d56b2ffba84557d885e9a566bd9601d4588b520c6e147460523a2b36dfeebfa6"
+  },
+  "agents": {
+    "claude": {
+      "version": "2.1.278",
+      "npm_integrity": "sha512-mfNRqC0GaEXqmP97NiwJBeYBmRuqe2VzgLUreUUaEhyJxJWx2Z6ClW1tBOncGNNXdhj6EY4LPvUIWP+oq311CA=="
+    },
+    "codex": {
+      "version": "0.155.1",
+      "npm_integrity": "sha512-02fAAGyBtlA1zPjEo3kTj/bOSYbPz5DvjLwRZJdV7weFFEDzNFOMjQGmZ/+5CuirYV0hE+AZTrnjzwXYU4AdAQ=="
+    }
+  },
+  "images": {
+    "base": {
+      "reference": "spaceship-bench-base:linux-rust-v1",
+      "image_id": "sha256:91df800504fbed41009f344c07afa9fbb1b43fb85c5b4493b8edc0d2c5c7626d"
+    },
+    "claude": {
+      "reference": "spaceship-bench-claude:linux-rust-v1",
+      "image_id": "sha256:2d3110d469037952dfd952c21c940356ee532d9ac7e97a1a9f445428f0f05c67"
+    },
+    "codex": {
+      "reference": "spaceship-bench-codex:linux-rust-v1",
+      "image_id": "sha256:f43578cd535bc753fedd78fae4144deee3d7e28a7373247e4dca6e5364758bcc"
+    }
+  },
+  "build_status": "images_built_and_loaded; live_isolation_unverified",
+  "native_packages": {
+    "location_in_image": "/opt/bench/native-packages.tsv",
+    "content_pinned_by": "sha256:91df800504fbed41009f344c07afa9fbb1b43fb85c5b4493b8edc0d2c5c7626d"
+  },
+  "guest_architecture": "amd64",
+  "notes": "Real upstream registry pins and local Docker image IDs are recorded. Docker's containerd image store may report OCI index IDs rather than configuration IDs. All three images were built and loaded; this does not certify guest isolation."
+}

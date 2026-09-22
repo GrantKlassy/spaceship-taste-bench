@@ -1,0 +1,27 @@
+{
+  "name": "bench-observed",
+  "agent": "shell",
+  "kits": [],
+  "state": "running",
+  "uptime": "2s",
+  "image": "spaceship-bench-base:linux-rust-v1",
+  "image_digest": "sha256:91df800504fbed41009f344c07afa9fbb1b43fb85c5b4493b8edc0d2c5c7626d",
+  "cpus": 2,
+  "memory": "2g",
+  "network": "bench-observed",
+  "network_policy": {
+    "scope": "sandbox"
+  },
+  "proxy": "172.17.0.0:3128",
+  "secrets": [
+    {
+      "name": "mcpgateway",
+      "source": "uploaded"
+    }
+  ],
+  "mcp_gateway": true,
+  "runtime_mounts": [],
+  "sessions": 0,
+  "daemon_version": "v0.45.0",
+  "daemon_uptime": "54m"
+}
