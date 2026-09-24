@@ -29,6 +29,94 @@ pub struct Attempt<'a> {
     pub task_version: &'a str,
 }
 
+/// Reprocess an already stopped, retained image. Never restart generation or
+/// rebuild/rewrite any submitted source on the host.
+pub fn recover<B: Sandbox>(
+    backend: &B,
+    config: &Config,
+    repo: &Path,
+    state: &Path,
+    id: &str,
+    abort: &AtomicBool,
+) -> Result<()> {
+    let (dir, mut run) = protocol::load_run_metadata(repo, id)?;
+    ensure!(
+        config.mode == run.mode && config.environment == run.environment.environment,
+        "recovery mode and environment must match the archived attempt"
+    );
+    ensure!(
+        run.export.status == ArtifactStatus::Failed
+            && run.cleanup == ArtifactStatus::Complete
+            && run.started_at.is_some()
+            && run.ended_at.is_some(),
+        "recovery requires a finished attempt with failed export and completed guest cleanup"
+    );
+    let source = dir.join("solution");
+    let audit = dir.join("export-recovery.json");
+    ensure!(
+        !source.exists() && !audit.exists(),
+        "refusing to overwrite an existing solution or recovery record"
+    );
+    if let Some(expected) = run.input_sha256.get("environment.lock.json") {
+        let lock = repo
+            .join("environments")
+            .join(&config.environment)
+            .join("environment.lock.json");
+        ensure!(
+            archive::hash(&archive::read_regular(&lock, 1024 * 1024)?) == *expected,
+            "recovery environment differs from the frozen input"
+        );
+    }
+    let raw = state.join("raw").join(id);
+    archive::ensure_directory(&raw)?;
+    let image = raw.join("stopped-image.tar");
+    ensure!(
+        fs::symlink_metadata(&image)?.file_type().is_file(),
+        "missing regular stopped snapshot"
+    );
+    let image_limit = run.requested_limits.disk_mib * 1024 * 1024;
+    let snapshot_hash = archive::file_hash(&image, image_limit)?;
+    backend.preflight(Role::Package)?;
+    eprintln!("Recovering source from the retained stopped snapshot; no model request.");
+    let files = archive::extract_image_workspace_abort(
+        &image,
+        "workspace",
+        &source,
+        image_limit,
+        run.requested_limits.export_bytes,
+        run.requested_limits.export_files,
+        abort,
+    )?;
+    archive::make_readonly(&source)?;
+    atomic_json(
+        &audit,
+        &json!({
+            "schema_version": 1,
+            "recovered_at": Utc::now(),
+            "snapshot_sha256": snapshot_hash,
+            "snapshot_bytes": fs::metadata(&image)?.len(),
+            "previous_run": &run,
+            "recovery_harness": protocol::harness_identity(repo),
+        }),
+    )?;
+    run.export = Export {
+        status: ArtifactStatus::Complete,
+        reason: None,
+        tree_sha256: Some(archive::tree_hash(&files)?),
+        files,
+    };
+    run.replay_preparation = ArtifactStatus::Pending;
+    atomic_json(&dir.join("run.json"), &run)?;
+    let replay = replay::prepare_abort(backend, config, &dir, &run, state, abort)?;
+    run.replay_preparation = replay.preparation;
+    atomic_json(&dir.join("run.json"), &run)?;
+    eprintln!(
+        "Recovered {id}: export {:?}; replay {:?}.",
+        run.export.status, run.replay_preparation
+    );
+    Ok(())
+}
+
 pub fn run<B: Sandbox>(
     backend: &B,
     config: &Config,
@@ -43,6 +131,7 @@ pub fn run<B: Sandbox>(
         task_version,
     } = attempt;
     crate::config::validate_model(model).map_err(anyhow::Error::msg)?;
+    config.mode.validate_agent(agent)?;
     let task = Task::load(repo, task_version)?;
     ensure!(
         task.contract.environment == config.environment,
@@ -62,6 +151,7 @@ pub fn run<B: Sandbox>(
         "settings.json".into(),
         serde_json::to_vec_pretty(&json!({
             "schema_version": 1, "backend": config.backend, "environment": config.environment,
+            "mode": config.mode, "accepted_limitations": config.mode.limitations(),
             "limits": config.limits, "agent": agent.settings()
         }))?,
     );
@@ -77,7 +167,9 @@ pub fn run<B: Sandbox>(
     }
     let mut run = Run {
         schema_version: protocol::SCHEMA,
-        protocol_version: protocol::PROTOCOL.into(),
+        protocol_version: config.mode.protocol().into(),
+        mode: config.mode,
+        accepted_limitations: config.mode.limitations(),
         run_id: id.clone(),
         task_version: task_version.into(),
         prompt_sha256: task.prompt_sha256.clone(),
@@ -123,13 +215,22 @@ pub fn run<B: Sandbox>(
         &inputs,
     )?;
     drop(store); // Task freeze is now represented by the atomic snapshot.
-    atomic_json(&dir.join("replay.json"), &replay::Replay::default())?;
+    atomic_json(
+        &dir.join("replay.json"),
+        &replay::Replay {
+            mode: run.mode,
+            ..replay::Replay::default()
+        },
+    )?;
     let raw = state.join("raw").join(&id);
     // Host-only recovery journal is written before provisioning starts.
     let result = (|| -> Result<()> {
         fs::create_dir_all(&raw)?;
         archive::private_dir(&raw)?;
-        eprintln!("Allocated {id}; creating a fresh guest.");
+        eprintln!(
+            "Allocated {id} ({}); creating a fresh guest.",
+            config.mode.protocol()
+        );
         let name = format!("bench-{}", uuid::Uuid::new_v4().simple());
         atomic_json(
             &raw.join("guest.json"),
@@ -142,7 +243,7 @@ pub fn run<B: Sandbox>(
         )?;
         run.environment = backend.verify(&guest.name, Role::Generation(agent))?;
         ensure!(
-            run.environment.isolation_verified
+            (run.environment.isolation_verified || config.mode.is_pilot())
                 && run.environment.environment == config.environment
                 && run.environment.effective_limits.is_some()
                 && run.environment.network_policy.is_some(),
@@ -280,6 +381,7 @@ pub fn run<B: Sandbox>(
         atomic_json(
             &dir.join("replay.json"),
             &replay::Replay {
+                mode: run.mode,
                 preparation: ArtifactStatus::Unavailable,
                 reason: Some("source_unavailable_or_attempt_aborted".into()),
                 ..replay::Replay::default()

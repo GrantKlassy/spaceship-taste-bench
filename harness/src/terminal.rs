@@ -8,16 +8,16 @@ pub struct Terminal {
 }
 #[cfg(unix)]
 impl Terminal {
-    pub fn require_120x40() -> Result<Self> {
-        Self::capture(0, 1)
+    pub fn require_size(columns: u16, rows: u16) -> Result<Self> {
+        Self::capture(0, 1, columns, rows)
     }
     // Private: these descriptors must stay open until the guard is dropped.
-    fn capture(input: libc::c_int, output: libc::c_int) -> Result<Self> {
+    fn capture(input: libc::c_int, output: libc::c_int, columns: u16, rows: u16) -> Result<Self> {
         // SAFETY: stack structs have valid storage, fd 0 is checked for a TTY.
         unsafe {
             ensure!(
                 libc::isatty(input) == 1 && libc::isatty(output) == 1,
-                "play requires an interactive terminal sized to 120 columns by 40 rows"
+                "play requires an interactive terminal sized to {columns} columns by {rows} rows"
             );
             let mut size: libc::winsize = std::mem::zeroed();
             ensure!(
@@ -25,8 +25,8 @@ impl Terminal {
                 "cannot query terminal dimensions"
             );
             ensure!(
-                size.ws_col == 120 && size.ws_row == 40,
-                "resize terminal to 120x40 (currently {}x{})",
+                size.ws_col == columns && size.ws_row == rows,
+                "resize terminal to {columns}x{rows} (currently {}x{})",
                 size.ws_col,
                 size.ws_row
             );
@@ -58,7 +58,7 @@ impl Drop for Terminal {
 pub struct Terminal;
 #[cfg(not(unix))]
 impl Terminal {
-    pub fn require_120x40() -> Result<Self> {
+    pub fn require_size(_columns: u16, _rows: u16) -> Result<Self> {
         bail!("native Windows terminal transport is unsupported")
     }
 }
@@ -143,7 +143,13 @@ mod tests {
             );
             let _master = OwnedFd::from_raw_fd(master);
             let _slave = OwnedFd::from_raw_fd(slave);
-            let guard = Terminal::capture(slave, slave).unwrap();
+            drop(Terminal::capture(slave, slave, 120, 40).unwrap());
+            assert!(Terminal::capture(slave, slave, 124, 69).is_err());
+            size.ws_col = 124;
+            size.ws_row = 69;
+            assert_eq!(libc::ioctl(slave, libc::TIOCSWINSZ, &size), 0);
+            assert!(Terminal::capture(slave, slave, 120, 40).is_err());
+            let guard = Terminal::capture(slave, slave, 124, 69).unwrap();
             let saved = guard.saved;
             let mut raw = saved;
             libc::cfmakeraw(&mut raw);
@@ -169,7 +175,7 @@ mod tests {
             );
             size.ws_col = 80;
             assert_eq!(libc::ioctl(slave, libc::TIOCSWINSZ, &size), 0);
-            assert!(Terminal::capture(slave, slave).is_err());
+            assert!(Terminal::capture(slave, slave, 124, 69).is_err());
         }
     }
 }

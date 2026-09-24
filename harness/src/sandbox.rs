@@ -4,8 +4,9 @@ use crate::{
     archive,
     config::{Config, parse_component, state_dir},
     inspection::{
-        CodexBroker, GuestProbe, Inspect, validate_crates_policy, validate_denial,
-        validate_offline_policy, validate_protocol_denial,
+        CodexBroker, GuestProbe, Inspect, validate_allowlist_policy, validate_denial,
+        validate_offline_policy, validate_offline_policy_with_masked_allows,
+        validate_protocol_denial,
     },
     process,
     protocol::EnvironmentIdentity,
@@ -15,6 +16,7 @@ use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
     sync::{
@@ -24,6 +26,28 @@ use std::{
 };
 
 pub const BACKEND_VERSION: &str = "0.45.0";
+const CRATES_DESTINATIONS: &[&str] = &["index.crates.io:443", "static.crates.io:443"];
+// Observed immutable built-in Codex allowances in sbx 0.45.0, plus crates.io.
+// Pilot generation uses Docker's existing defaults; packaging/playback are narrower.
+const CODEX_DESTINATIONS: &[&str] = &[
+    "api.openai.com:443",
+    "openai.com:443",
+    "auth.openai.com:443",
+    "chatgpt.com:443",
+    "files.openai.com:443",
+    "registry.npmjs.org:443",
+    "releases.openai.com:443",
+    "api.github.com:443",
+    "github.com:443",
+    "release-assets.githubusercontent.com:443",
+    "codeload.github.com:443",
+    "archive.ubuntu.com:80",
+    "security.ubuntu.com:80",
+    "ports.ubuntu.com:80",
+    "download.docker.com:443",
+    "index.crates.io:443",
+    "static.crates.io:443",
+];
 // sbx 0.45's built-in Claude runtime attaches these fresh ext4 devices in
 // addition to the root disk. Charge their full nominal capacities to the
 // configured disk budget, including filesystem overhead.
@@ -293,7 +317,9 @@ impl Sbx {
         Ok(format!("sbx {BACKEND_VERSION}"))
     }
     pub fn doctor(&self, selected: Option<Agent>) -> Report {
+        let selected = selected.or_else(|| self.config.mode.is_pilot().then_some(Agent::Codex));
         let mut report = Report::default();
+        report.push("execution_mode", Status::Pass, self.config.mode.protocol());
         let cli_available = self.version().is_ok();
         report.push(
             "backend_version",
@@ -383,6 +409,10 @@ impl Sbx {
             if selected.is_some_and(|selected| selected != agent) {
                 continue;
             }
+            if let Err(error) = self.config.mode.validate_agent(agent) {
+                report.push("agent", Status::Blocked, error.to_string());
+                continue;
+            }
             match Role::Generation(agent).root_disk_mib(self.config.limits.disk_mib) {
                 Ok(root_mib) => report.push(
                     &format!("disk_{agent}"),
@@ -393,51 +423,72 @@ impl Sbx {
                     &format!("disk_{agent}"), Status::Blocked, error.to_string(),
                 ),
             }
-            let service = match agent {
-                Agent::Claude => "anthropic",
-                Agent::Codex => "openai",
-            };
-            // Quiet lists names only; never log or print secret values, masked or otherwise.
-            let configured = process::control_output(self.command(&[
-                "secret",
-                "ls",
-                "--service",
-                service,
-                "--quiet",
-            ]))
-            .and_then(|(exit, data)| {
-                ensure!(exit == Some(0), "credential inventory unavailable");
-                Ok(data.iter().any(|b| !b.is_ascii_whitespace()))
-            });
+            let configured = self.has_credential(agent);
             match configured {
+                Ok(true) if self.config.mode.is_pilot() => report.push(&format!("auth_{agent}"), Status::Pass,
+                    "Broker entry exists; a fresh guest must also pass the OAuth checks below."),
                 Ok(true) => report.push(&format!("auth_{agent}"), Status::Blocked,
                     "A broker credential entry exists; subscription mode, refresh and fresh-guest reuse remain unverified."),
                 Ok(false) => report.push(&format!("auth_{agent}"), Status::Blocked,
-                    format!("No {service} broker credential is stored. Complete subscription sign-in after host-service isolation is resolved.")),
+                    format!("No {agent} broker credential is stored. Run: bench auth {agent}.")),
                 Err(_) => report.push(&format!("auth_{agent}"), Status::Blocked, "Credential status unavailable; no authentication was attempted."),
             }
         }
-        for (id, detail) in [
-            "mcp_isolation",
-            "credential_scope",
-            "provider_egress",
-            "snapshot_storage",
-        ]
-        .into_iter()
-        .zip(BLOCKERS)
-        {
-            report.push(id, Status::Blocked, *detail);
+        if self.config.mode.is_pilot() {
+            for limitation in self.config.mode.limitations() {
+                report.push("pilot_limitation", Status::Warning, limitation);
+            }
+            if report.ready {
+                match self.check_runtimes(selected) {
+                    Ok(runtime) => {
+                        for check in runtime.checks {
+                            report.push(&check.id, check.status, check.detail);
+                        }
+                    }
+                    Err(error) => report.push("runtime", Status::Blocked, error.to_string()),
+                }
+            }
+        } else {
+            for (id, detail) in [
+                "mcp_isolation",
+                "credential_scope",
+                "provider_egress",
+                "snapshot_storage",
+            ]
+            .into_iter()
+            .zip(BLOCKERS)
+            {
+                report.push(id, Status::Blocked, *detail);
+            }
         }
         report
+    }
+    fn has_credential(&self, agent: Agent) -> Result<bool> {
+        let service = match agent {
+            Agent::Codex => "openai",
+            Agent::Claude => "anthropic",
+        };
+        // Names only, never credential values; do not persist authentication output.
+        let (exit, data) = process::control_output(self.command(&[
+            "secret",
+            "ls",
+            "--service",
+            service,
+            "--quiet",
+        ]))?;
+        ensure!(exit == Some(0), "credential inventory unavailable");
+        Ok(data.iter().any(|b| !b.is_ascii_whitespace()))
     }
     /// Only fixed version/help/probe commands are accepted by this diagnostic.
     /// No official preflight bypass and no user-supplied task/source is exposed.
     pub fn check_runtimes(&self, selected: Option<Agent>) -> Result<Report> {
+        let selected = selected.or_else(|| self.config.mode.is_pilot().then_some(Agent::Codex));
         let mut report = Report::default();
         for agent in [Agent::Claude, Agent::Codex] {
             if selected.is_some_and(|selected| selected != agent) {
                 continue;
             }
+            self.config.mode.validate_agent(agent)?;
             let role = Role::Generation(agent);
             self.prerequisites(role)?;
             let result = (|| -> Result<()> {
@@ -450,6 +501,7 @@ impl Sbx {
                 )?;
                 self.verify_ports(&guest.name)?;
                 let probe = self.probe(&guest.name)?;
+                probe.validate_sockets()?;
                 match probe.validate_resources(&self.config.limits, role) {
                     Ok(()) => report.push(
                         &format!("{agent}_resources"),
@@ -476,7 +528,7 @@ impl Sbx {
                     },
                 );
                 let neutral = probe.validate_machine(&self.config.limits, role).is_ok();
-                report.push(&format!("{agent}_configuration"), if neutral { Status::Pass } else { Status::Blocked },
+                report.push(&format!("{agent}_configuration"), if neutral { Status::Pass } else { self.accepted_status() },
                     if neutral { "No pre-existing agent state." } else { "Built-in runtime writes agent configuration (including gateway configuration); effective neutral settings and broker state require verification." });
                 let output = self.control(self.exec(
                     &guest.name,
@@ -494,6 +546,10 @@ impl Sbx {
                 self.control(self.exec(&guest.name, &args, false)?)?;
                 report.push(&format!("{agent}_runtime"), Status::Pass, "Fresh built-in runtime starts, reports the pinned version and accepts the adapter flags.");
                 if agent == Agent::Codex {
+                    if self.config.mode.is_pilot() {
+                        self.configure_generation(&guest.name)?;
+                        report.push("codex_network", Status::Pass, "Docker's pinned Codex network defaults plus crates.io are configured; checked unrelated destinations remain denied. Docker-managed services are outside this guarantee.");
+                    }
                     match self.codex_broker(&guest.name)?.validate_subscription() {
                         Ok(()) => report.push("codex_subscription", Status::Pass,
                             "Fresh guest reports broker OAuth mode and contains only the expected auth placeholder. Refresh and provider access still require verification."),
@@ -507,7 +563,7 @@ impl Sbx {
                     if let Err(error) = result {
                         report.push(
                             &format!("{agent}_services"),
-                            Status::Blocked,
+                            self.accepted_status(),
                             error.to_string(),
                         );
                     }
@@ -553,6 +609,13 @@ impl Sbx {
         }
         Ok(report)
     }
+    fn accepted_status(&self) -> Status {
+        if self.config.mode.is_pilot() {
+            Status::Warning
+        } else {
+            Status::Blocked
+        }
+    }
     pub fn auth(&self, agent: Agent) -> Result<()> {
         self.version()?;
         crate::terminal::supported_host()?;
@@ -565,7 +628,7 @@ impl Sbx {
                     process::interactive(self.command(&["secret", "set", "openai", "--oauth"]))?;
                 ensure!(exit == Some(0), "backend OAuth did not complete");
                 eprintln!(
-                    "OAuth flow completed. Generation remains gated by doctor. Existing API-key precedence must be checked before certification."
+                    "OAuth flow completed. Run: bench doctor --agent codex. Fresh-guest checks verify subscription mode before a task starts."
                 );
                 Ok(())
             }
@@ -653,7 +716,11 @@ impl Sbx {
     }
     fn verify_offline_policy(&self, name: &str) -> Result<()> {
         let bytes = self.control(self.command(&["policy", "ls", name, "--json"]))?;
-        validate_offline_policy(&bytes, name)?;
+        if self.config.mode.is_pilot() {
+            validate_offline_policy_with_masked_allows(&bytes, name, CODEX_DESTINATIONS)?;
+        } else {
+            validate_offline_policy(&bytes, name)?;
+        }
         for target in [
             "example.com:443",
             "github.com:443",
@@ -698,9 +765,14 @@ impl Sbx {
         }
         Ok(())
     }
-    fn configure_offline(&self, name: &str) -> Result<()> {
+    fn configure_offline(&self, name: &str, previous: &[&str]) -> Result<()> {
+        validate_allowlist_policy(
+            &self.control(self.command(&["policy", "ls", name, "--json"]))?,
+            name,
+            previous,
+        )?;
         self.checked(&["policy", "deny", "network", "--sandbox", name, "**"])?;
-        for target in ["index.crates.io:443", "static.crates.io:443"] {
+        for target in previous {
             self.checked(&[
                 "policy",
                 "rm",
@@ -715,6 +787,17 @@ impl Sbx {
         self.verify_offline_policy(name)
     }
     fn configure_crates(&self, name: &str) -> Result<()> {
+        self.configure_allowlist(name, CRATES_DESTINATIONS, CRATES_DESTINATIONS)
+    }
+    fn configure_generation(&self, name: &str) -> Result<()> {
+        ensure!(
+            self.config.mode.is_pilot(),
+            "generation network policy is currently available only for the Docker pilot"
+        );
+        // Docker supplies the immutable Codex rules; add only Rust registry access.
+        self.configure_allowlist(name, CRATES_DESTINATIONS, CODEX_DESTINATIONS)
+    }
+    fn configure_allowlist(&self, name: &str, added: &[&str], targets: &[&str]) -> Result<()> {
         // Never changes the global baseline or any other guest. Start closed and
         // install narrow exceptions before removing this guest's blanket deny.
         self.verify_offline_policy(name)?;
@@ -724,7 +807,7 @@ impl Sbx {
             "network",
             "--sandbox",
             name,
-            "index.crates.io:443,static.crates.io:443",
+            &added.join(","),
         ])?;
         self.checked(&[
             "policy",
@@ -736,19 +819,18 @@ impl Sbx {
             "**",
             "--force",
         ])?;
-        validate_crates_policy(
+        validate_allowlist_policy(
             &self.control(self.command(&["policy", "ls", name, "--json"]))?,
             name,
+            targets,
         )?;
-        for (target, allowed) in [
-            ("index.crates.io:443", true),
-            ("static.crates.io:443", true),
-            ("example.com:443", false),
-            ("github.com:443", false),
-            ("api.anthropic.com:443", false),
-            ("api.openai.com:443", false),
-            ("169.254.169.254:80", false),
-        ] {
+        for target in CODEX_DESTINATIONS.iter().copied().chain([
+            "example.com:443",
+            "api.anthropic.com:443",
+            "169.254.169.254:80",
+            "host.docker.internal:80",
+        ]) {
+            let allowed = targets.contains(&target);
             let (exit, bytes) = self.control_output(self.command(&[
                 "policy",
                 "check",
@@ -770,6 +852,9 @@ impl Sbx {
         Ok(())
     }
     pub fn evidence_gate(&self) -> Result<()> {
+        if self.config.mode.is_pilot() {
+            return Ok(());
+        }
         anyhow::bail!(
             "required isolation is not established:\n- {}\nSee docs/VERIFICATION.md. There is no override or host fallback.",
             BLOCKERS.join("\n- ")
@@ -779,7 +864,37 @@ impl Sbx {
 impl Sandbox for Sbx {
     fn preflight(&self, role: Role) -> Result<()> {
         self.prerequisites(role)?;
-        self.evidence_gate()
+        self.evidence_gate()?;
+        if let Role::Generation(agent) = role {
+            self.config.mode.validate_agent(agent)?;
+        }
+        for key in [
+            "ssh.agentForwardingEnabled",
+            "clipboard.imagePaste",
+            "claude.remoteControl",
+        ] {
+            disabled_setting(
+                &self.control(self.command(&["settings", "get", "--json", key]))?,
+                key,
+            )?;
+        }
+        let templates: Templates =
+            serde_json::from_slice(&self.control(self.command(&["template", "ls", "--json"]))?)?;
+        templates.contains(self.image(role)?)?;
+        if let Role::Generation(agent) = role {
+            templates.contains(self.image(Role::Playback)?)?;
+            ensure!(
+                self.has_credential(agent)?,
+                "No subscription credential is stored. Run: bench auth {agent}"
+            );
+            let report = self.check_runtimes(Some(agent))?;
+            ensure!(
+                report.ready,
+                "agent preflight failed:\n{}",
+                report.lines().collect::<Vec<_>>().join("\n")
+            );
+        }
+        Ok(())
     }
     fn create(&self, name: &str, role: Role) -> Result<()> {
         ensure!(
@@ -826,18 +941,28 @@ impl Sandbox for Sbx {
         Ok(())
     }
     fn verify(&self, name: &str, role: Role) -> Result<EnvironmentIdentity> {
+        if let Role::Generation(agent) = role {
+            self.config.mode.validate_agent(agent)?;
+        }
         let inspect = self.inspect(name)?;
         inspect.validate_identity(name, role, self.image(role)?, &self.config.limits)?;
         self.verify_ports(name)?;
-        inspect.validate_services()?;
         let probe = self.probe(name)?;
-        probe.validate_machine(&self.config.limits, role)?;
-        probe.validate_services()?;
+        if self.config.mode.is_pilot() {
+            probe.validate_resources(&self.config.limits, role)?;
+            probe.validate_sockets()?;
+        } else {
+            inspect.validate_services()?;
+            probe.validate_machine(&self.config.limits, role)?;
+            probe.validate_services()?;
+        }
         if role == Role::Generation(Agent::Codex) {
             self.codex_broker(name)?.validate_subscription()?;
         }
         if role == Role::Package {
             self.configure_crates(name)?;
+        } else if role == Role::Generation(Agent::Codex) && self.config.mode.is_pilot() {
+            self.configure_generation(name)?;
         } else {
             self.verify_offline_policy(name)?;
         }
@@ -852,12 +977,14 @@ impl Sandbox for Sbx {
             rust: Some(probe.rust),
             architecture: Some(probe.architecture),
             effective_limits: Some(self.config.limits.clone()),
-            network_policy: Some(if role == Role::Package {
-                serde_json::json!({"external_enforcement": "sbx", "default": "deny", "allow_tcp": ["index.crates.io:443", "static.crates.io:443"]})
-            } else {
-                serde_json::json!({"external_enforcement": "sbx", "explicit_deny": ["**"]})
-            }),
-            isolation_verified: true,
+            network_policy: Some(
+                if role == Role::Package || role == Role::Generation(Agent::Codex) {
+                    serde_json::json!({"external_enforcement": "sbx", "default": "deny", "allow_tcp": if role == Role::Package { CRATES_DESTINATIONS } else { CODEX_DESTINATIONS }, "managed_services_excluded": self.config.mode.is_pilot()})
+                } else {
+                    serde_json::json!({"external_enforcement": "sbx", "explicit_deny": ["**"], "managed_services_excluded": self.config.mode.is_pilot()})
+                },
+            ),
+            isolation_verified: !self.config.mode.is_pilot(),
         })
     }
     fn exec(&self, name: &str, args: &[String], interactive: bool) -> Result<Command> {
@@ -913,6 +1040,10 @@ impl Sandbox for Sbx {
             "snapshot requires a stopped guest"
         );
         let image = raw.join("stopped-image.tar");
+        ensure!(
+            !image.exists(),
+            "refusing to overwrite a retained stopped snapshot"
+        );
         let tag = format!("spaceship-bench-export:{name}");
         let mut cmd = self.command(&["template", "save", name, &tag, "--output"]);
         cmd.arg(&image);
@@ -941,16 +1072,32 @@ impl Sandbox for Sbx {
             .map(|_| ())
         });
         let cleanup = self.cleanup_control(self.command(&["template", "rm", "--force", &tag]));
-        if image.exists() {
-            fs::remove_file(image)?;
-        }
-        result?;
-        cleanup.map(|_| ())
+        finish_export(&image, raw, result.and(cleanup.map(|_| ())))
     }
     fn destroy(&self, name: &str) -> Result<()> {
         self.cleanup_control(self.command(&["rm", "--force", name]))
             .map(|_| ())
     }
+}
+
+fn finish_export(image: &Path, raw: &Path, result: Result<()>) -> Result<()> {
+    if let Err(error) = &result {
+        // Preserve the stopped filesystem when validation fails. Cleanup still
+        // removes the guest/template, but must not erase the only recovery input.
+        if image.exists() {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(image, fs::Permissions::from_mode(0o600))?;
+            }
+        }
+        let detail = format!("{error:#}\n");
+        let mut log = process::private_file(&raw.join("export-error.log"))?;
+        log.write_all(&detail.as_bytes()[..detail.len().min(64 * 1024)])?;
+    } else if image.exists() {
+        fs::remove_file(image)?;
+    }
+    result
 }
 
 /// Armed BEFORE create so partial provisioning is also cleaned up.
@@ -997,7 +1144,8 @@ pub fn integration_check(backend: &Sbx, repo: &Path, state: &Path) -> Result<()>
 
 /// Diagnostic-only exception to the production preflight: fixed trusted probes
 /// and a fixed harmless fixture, never a task, archived source, login or agent.
-/// All production commands still call the closed isolation preflight.
+/// Strict mode retains its certification gate. Pilot mode exercises the accepted
+/// Docker boundary with the same fixed fixtures and no model request.
 pub fn integration_check_abort(
     backend: &Sbx,
     repo: &Path,
@@ -1052,10 +1200,33 @@ pub fn integration_check_abort(
     let services = [inspect.validate_services(), probe.validate_services()];
     for finding in &services {
         if let Err(error) = finding {
-            eprintln!("FAIL: {error}");
+            eprintln!(
+                "{}: {error}",
+                if backend.config.mode.is_pilot() {
+                    "PILOT LIMITATION"
+                } else {
+                    "FAIL"
+                }
+            );
         }
     }
     backend.verify_offline_policy(&first.name)?;
+    if backend.config.mode.is_pilot() {
+        // The shell fixture has no immutable agent rules. Reproduce the same
+        // effective destinations here; check-runtimes tests the actual Codex kit.
+        backend.configure_allowlist(&first.name, CODEX_DESTINATIONS, CODEX_DESTINATIONS)?;
+        backend.configure_offline(&first.name, CODEX_DESTINATIONS)?;
+        eprintln!("PASS: pilot generation allowlist and restoration to deny-all.");
+        let identity = backend.verify(&first.name, Role::Package)?;
+        ensure!(
+            !identity.isolation_verified,
+            "pilot incorrectly certified strict isolation"
+        );
+        backend.configure_offline(&first.name, CRATES_DESTINATIONS)?;
+        eprintln!(
+            "PASS: production pilot packaging checks accept Docker services and retain resource/mount checks."
+        );
+    }
     let script = "import os,sys; assert not any(os.path.exists(p) for p in sys.argv[1:]); open('/workspace/freshness-sentinel','w').write('CONTROLLED'); os.mkdir('/home/agent/.claude'); open('/home/agent/.claude/freshness-sentinel','w').write('CONTROLLED')";
     let args = vec![
         "python3".into(),
@@ -1157,7 +1328,7 @@ pub fn integration_check_abort(
         &backend.diagnostics,
         abort,
     )?;
-    backend.configure_offline(&second.name)?;
+    backend.configure_offline(&second.name, CRATES_DESTINATIONS)?;
     check_abort()?;
     let mut terminal = process::host_command(Path::new("python3"));
     terminal
@@ -1216,6 +1387,14 @@ pub fn integration_check_abort(
     check_abort()?;
     eprintln!("Playing the preserved source and separate package in a third clean VM.");
     let third = Guest::new(backend, Role::Diagnostic)?;
+    if backend.config.mode.is_pilot() {
+        backend.preflight(Role::Playback)?;
+        let identity = backend.verify(&third.name, Role::Playback)?;
+        ensure!(
+            !identity.isolation_verified,
+            "pilot incorrectly certified strict isolation"
+        );
+    }
     backend
         .probe(&third.name)?
         .validate_machine(&backend.config.limits, Role::Playback)?;
@@ -1254,7 +1433,7 @@ pub fn integration_check_abort(
     );
     check_abort()?;
     ensure!(
-        services.iter().all(Result::is_ok),
+        backend.config.mode.is_pilot() || services.iter().all(Result::is_ok),
         "real integration check FAILED required host-service isolation; successful fixture checks do not certify official runs. See docs/VERIFICATION.md"
     );
     backend.evidence_gate()
@@ -1263,7 +1442,65 @@ pub fn integration_check_abort(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_export_keeps_snapshot_and_private_diagnostic() {
+        let raw = tempfile::tempdir().unwrap();
+        let image = raw.path().join("stopped-image.tar");
+        fs::write(&image, b"original stopped filesystem").unwrap();
+        let error = finish_export(
+            &image,
+            raw.path(),
+            Err(anyhow::anyhow!("source layer size limit")),
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "source layer size limit");
+        assert_eq!(fs::read(&image).unwrap(), b"original stopped filesystem");
+        let diagnostic = raw.path().join("export-error.log");
+        assert_eq!(
+            fs::read_to_string(&diagnostic).unwrap(),
+            "source layer size limit\n"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for path in [&image, &diagnostic] {
+                assert_eq!(
+                    fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                    0o600
+                );
+            }
+        }
+    }
+    #[test]
+    fn successful_export_removes_full_private_snapshot() {
+        let raw = tempfile::tempdir().unwrap();
+        let image = raw.path().join("stopped-image.tar");
+        fs::write(&image, b"stopped filesystem").unwrap();
+        finish_export(&image, raw.path(), Ok(())).unwrap();
+        assert!(!image.exists());
+        assert!(!raw.path().join("export-error.log").exists());
+    }
     use serde_json::{Value, json};
+
+    #[test]
+    fn pilot_does_not_unlock_strict_certification() {
+        let mut backend = Sbx {
+            config: Config::default(),
+            lock: EnvironmentLock {
+                schema_version: 1,
+                environment: "linux-rust-v2".into(),
+                rust_version: "1.97.0".into(),
+                images: Default::default(),
+            },
+            diagnostics: PathBuf::new(),
+            abort: Arc::new(AtomicBool::new(false)),
+        };
+        assert!(backend.evidence_gate().is_err());
+        assert_eq!(backend.accepted_status(), Status::Blocked);
+        backend.config.mode = crate::config::ExecutionMode::DockerPilot;
+        backend.evidence_gate().unwrap();
+        assert_eq!(backend.accepted_status(), Status::Warning);
+    }
 
     fn diagnostic_fixture() -> Value {
         json!({"checks": DIAGNOSTIC_CHECKS.iter().map(|name| json!({

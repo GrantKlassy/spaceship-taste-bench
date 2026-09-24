@@ -96,6 +96,20 @@ fn configuration_rejects_unknown_or_unsafe_settings() {
     }
     assert!(Config::default().validate().is_ok());
 }
+
+#[test]
+fn pilot_is_explicit_and_cannot_be_confused_with_strict_mode() {
+    use bench::config::ExecutionMode;
+    assert_eq!(Config::default().mode, ExecutionMode::Strict);
+    let pilot: Config = toml::from_str("mode = 'docker-pilot'").unwrap();
+    assert_eq!(pilot.mode, ExecutionMode::DockerPilot);
+    assert!(!pilot.mode.limitations().is_empty());
+    assert!(ExecutionMode::Strict.limitations().is_empty());
+    assert!(toml::from_str::<Config>("mode = 'unsafe'").is_err());
+    let cli = Cli::try_parse_from(["bench", "--mode", "docker-pilot", "doctor"]).unwrap();
+    assert_eq!(cli.mode, Some(ExecutionMode::DockerPilot));
+    assert_eq!(Cli::try_parse_from(["bench", "doctor"]).unwrap().mode, None);
+}
 #[test]
 fn ids_are_utc_safe_unique_and_bounded() {
     let now = chrono::Utc.with_ymd_and_hms(2026, 9, 21, 19, 0, 0).unwrap();
@@ -118,11 +132,34 @@ fn task_contract_and_prompt_bytes_are_not_rewritten() {
         archive::hash(include_bytes!("../../tasks/spaceship-v1/prompt.md"))
     );
     assert!(Task::load(repo.path(), "../spaceship-v1").is_err());
-    let changed = String::from_utf8(task.contract_bytes)
-        .unwrap()
-        .replace("columns = 120", "columns = 80");
-    fs::write(repo.path().join("tasks/spaceship-v1/task.toml"), changed).unwrap();
-    assert!(Task::load(repo.path(), "spaceship-v1").is_err());
+    let original = String::from_utf8(task.contract_bytes).unwrap();
+    for field in ["columns", "rows"] {
+        let value = if field == "columns" {
+            task.contract.columns
+        } else {
+            task.contract.rows
+        };
+        let changed = original.replace(&format!("{field} = {value}"), &format!("{field} = 0"));
+        fs::write(repo.path().join("tasks/spaceship-v1/task.toml"), changed).unwrap();
+        assert!(Task::load(repo.path(), "spaceship-v1").is_err());
+    }
+}
+#[test]
+fn smoke_task_keeps_its_original_terminal_dimensions() {
+    let repo = repo();
+    fs::create_dir(repo.path().join("tasks/smoke-v1")).unwrap();
+    fs::write(
+        repo.path().join("tasks/smoke-v1/prompt.md"),
+        include_bytes!("../../tasks/smoke-v1/prompt.md"),
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("tasks/smoke-v1/task.toml"),
+        include_bytes!("../../tasks/smoke-v1/task.toml"),
+    )
+    .unwrap();
+    let task = Task::load(repo.path(), "smoke-v1").unwrap();
+    assert_eq!((task.contract.columns, task.contract.rows), (120, 40));
 }
 #[test]
 fn freeze_rejects_corrupt_archived_metadata_instead_of_ignoring_it() {

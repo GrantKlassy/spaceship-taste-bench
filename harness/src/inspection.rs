@@ -8,7 +8,7 @@ use crate::{
 use anyhow::{Result, ensure};
 use serde::Deserialize;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Deserialize)]
 pub(crate) struct Inspect {
@@ -276,16 +276,20 @@ impl GuestProbe {
         Ok(())
     }
     pub fn validate_services(&self) -> Result<()> {
-        ensure!(
-            !self.ssh_socket_present && !self.host_socket_present,
-            "guest exposes an SSH-agent or host-service socket"
-        );
+        self.validate_sockets()?;
         ensure!(
             !self.environment_keys.iter().any(|k| k.ends_with("_API_KEY")
                 || k.ends_with("_TOKEN")
                 || k.starts_with("SBX_CRED_")
                 || k.starts_with("MCP_")),
             "guest has provider/integration credential bindings; removal and scoping are unverified"
+        );
+        Ok(())
+    }
+    pub fn validate_sockets(&self) -> Result<()> {
+        ensure!(
+            !self.ssh_socket_present && !self.host_socket_present,
+            "guest exposes an SSH-agent or host-service socket"
         );
         Ok(())
     }
@@ -310,15 +314,47 @@ struct Rule {
     actions: Vec<String>,
 }
 pub(crate) fn validate_offline_policy(bytes: &[u8], name: &str) -> Result<()> {
+    validate_offline_policy_with_masked_allows(bytes, name, &[])
+}
+
+pub(crate) fn validate_offline_policy_with_masked_allows(
+    bytes: &[u8],
+    name: &str,
+    accepted: &[&str],
+) -> Result<()> {
     let policy: Policies = serde_json::from_slice(bytes)?;
     let network: Vec<_> = policy
         .rules
         .iter()
         .filter(|r| r.resource_type == "network")
         .collect();
-    ensure!(network.len() == 1, "unexpected or inherited network rules");
-    let rule = network[0];
     let scope = format!("sandbox:{name}");
+    let mut denials = Vec::new();
+    for rule in network {
+        ensure!(
+            rule.scope == scope && rule.applies_to == scope && rule.status == "active",
+            "unexpected or inherited network rules"
+        );
+        if rule.decision == "deny" {
+            denials.push(rule);
+        } else {
+            ensure!(
+                rule.decision == "allow"
+                    && rule.actions == ["net:connect:tcp"]
+                    && !rule.resources.is_empty()
+                    && rule
+                        .resources
+                        .iter()
+                        .all(|r| accepted.contains(&r.as_str())),
+                "unexpected network allowance behind deny-all"
+            );
+        }
+    }
+    ensure!(
+        denials.len() == 1,
+        "expected exactly one explicit deny-all rule"
+    );
+    let rule = denials[0];
     ensure!(
         rule.scope == scope
             && rule.applies_to == scope
@@ -363,39 +399,151 @@ pub(crate) fn validate_protocol_denial(
     Ok(())
 }
 
-pub(crate) fn validate_crates_policy(bytes: &[u8], name: &str) -> Result<()> {
+#[cfg(test)]
+fn validate_crates_policy(bytes: &[u8], name: &str) -> Result<()> {
+    validate_allowlist_policy(
+        bytes,
+        name,
+        &["index.crates.io:443", "static.crates.io:443"],
+    )
+}
+
+pub(crate) fn validate_allowlist_policy(bytes: &[u8], name: &str, targets: &[&str]) -> Result<()> {
     let policy: Policies = serde_json::from_slice(bytes)?;
     let network: Vec<_> = policy
         .rules
         .iter()
         .filter(|r| r.resource_type == "network")
         .collect();
-    ensure!(
-        network.len() == 2,
-        "dependency policy has unexpected network rules"
-    );
     let scope = format!("sandbox:{name}");
-    for target in ["index.crates.io:443", "static.crates.io:443"] {
+    let mut observed = BTreeSet::new();
+    for rule in network {
         ensure!(
-            network
-                .iter()
-                .filter(|r| r.scope == scope
-                    && r.applies_to == scope
-                    && r.decision == "allow"
-                    && r.status == "active"
-                    && r.resources == [target]
-                    && r.actions == ["net:connect:tcp"])
-                .count()
-                == 1,
-            "dependency policy does not allow exactly the observed registry destinations"
+            rule.scope == scope
+                && rule.applies_to == scope
+                && rule.decision == "allow"
+                && rule.status == "active"
+                && !rule.resources.is_empty()
+                && rule.actions == ["net:connect:tcp"],
+            "unexpected scope, state, protocol or decision in network allowlist"
         );
+        observed.extend(rule.resources.iter().map(String::as_str));
     }
+    ensure!(
+        observed == targets.iter().copied().collect(),
+        "policy does not allow exactly the requested destinations"
+    );
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_codex_rules_are_accepted_only_behind_an_explicit_deny_or_an_exact_allowlist() {
+        let mut data: Value =
+            serde_json::from_slice(include_bytes!("../tests/fixtures/sbx/policy.json")).unwrap();
+        let mut native = data["rules"][2].clone();
+        native["decision"] = "allow".into();
+        native["actions"] = serde_json::json!(["net:connect:tcp"]);
+        native["resources"] = serde_json::json!(["chatgpt.com:443", "github.com:443"]);
+        data["rules"].as_array_mut().unwrap().push(native);
+        let targets = ["chatgpt.com:443", "github.com:443"];
+        let bytes = serde_json::to_vec(&data).unwrap();
+        assert!(validate_offline_policy(&bytes, "bench-observed").is_err());
+        validate_offline_policy_with_masked_allows(&bytes, "bench-observed", &targets).unwrap();
+        assert!(validate_allowlist_policy(&bytes, "bench-observed", &targets).is_err());
+        assert!(
+            validate_offline_policy_with_masked_allows(
+                &bytes,
+                "bench-observed",
+                &["chatgpt.com:443"]
+            )
+            .is_err()
+        );
+        data["rules"].as_array_mut().unwrap().remove(2);
+        let bytes = serde_json::to_vec(&data).unwrap();
+        assert!(
+            validate_offline_policy_with_masked_allows(&bytes, "bench-observed", &targets).is_err()
+        );
+        validate_allowlist_policy(&bytes, "bench-observed", &targets).unwrap();
+        data["rules"][2]["resources"] = serde_json::json!(["**"]);
+        assert!(
+            validate_allowlist_policy(
+                &serde_json::to_vec(&data).unwrap(),
+                "bench-observed",
+                &targets
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn pilot_allowlist_rejects_broad_or_inherited_network_access() {
+        let mut data: Value =
+            serde_json::from_slice(include_bytes!("../tests/fixtures/sbx/crates-policy.json"))
+                .unwrap();
+        let rules = data["rules"].as_array_mut().unwrap();
+        let mut provider = rules.last().unwrap().clone();
+        provider["resources"] = serde_json::json!(["chatgpt.com:443"]);
+        rules.push(provider);
+        let targets = [
+            "chatgpt.com:443",
+            "index.crates.io:443",
+            "static.crates.io:443",
+        ];
+        validate_allowlist_policy(
+            &serde_json::to_vec(&data).unwrap(),
+            "bench-observed",
+            &targets,
+        )
+        .unwrap();
+        for (field, value) in [
+            ("resources", serde_json::json!(["**"])),
+            ("scope", serde_json::json!("global")),
+            (
+                "actions",
+                serde_json::json!(["net:connect:tcp", "net:connect:udp"]),
+            ),
+            ("status", serde_json::json!("inactive")),
+        ] {
+            let mut changed = data.clone();
+            changed["rules"].as_array_mut().unwrap().last_mut().unwrap()[field] = value;
+            assert!(
+                validate_allowlist_policy(
+                    &serde_json::to_vec(&changed).unwrap(),
+                    "bench-observed",
+                    &targets
+                )
+                .is_err()
+            );
+        }
+        assert!(
+            validate_crates_policy(&serde_json::to_vec(&data).unwrap(), "bench-observed").is_err()
+        );
+    }
+
+    #[test]
+    fn pilot_can_accept_managed_bindings_but_still_rejects_host_sockets() {
+        let mut data: Value =
+            serde_json::from_slice(include_bytes!("../tests/fixtures/sbx/guest.json")).unwrap();
+        data["ssh_socket_present"] = false.into();
+        data["personal_state_absent"] = false.into();
+        let probe: GuestProbe = serde_json::from_value(data.clone()).unwrap();
+        probe.validate_sockets().unwrap();
+        assert!(probe.validate_services().is_err());
+        for field in ["ssh_socket_present", "host_socket_present"] {
+            let mut changed = data.clone();
+            changed[field] = true.into();
+            assert!(
+                serde_json::from_value::<GuestProbe>(changed)
+                    .unwrap()
+                    .validate_sockets()
+                    .is_err()
+            );
+        }
+    }
+
     #[test]
     fn codex_subscription_requires_oauth_and_only_broker_placeholders() {
         let accepted = serde_json::json!({

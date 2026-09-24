@@ -18,6 +18,9 @@ pub struct Cli {
     pub repo: PathBuf,
     #[arg(long, global = true)]
     pub config: Option<PathBuf>,
+    /// Select strict certification or the explicitly labeled Docker sandbox pilot.
+    #[arg(long, global = true, value_enum)]
+    pub mode: Option<ExecutionMode>,
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -46,6 +49,11 @@ pub enum Commands {
     },
     /// Build and play an immutable submission in an offline guest.
     Play {
+        #[arg(value_parser = parse_component)]
+        run_id: String,
+    },
+    /// Recover a failed export from its retained stopped snapshot; no model request.
+    Recover {
         #[arg(value_parser = parse_component)]
         run_id: String,
     },
@@ -87,6 +95,44 @@ pub fn validate_model(s: &str) -> Result<String, String> {
     Ok(s.into())
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExecutionMode {
+    #[default]
+    Strict,
+    DockerPilot,
+}
+impl ExecutionMode {
+    pub fn is_pilot(self) -> bool {
+        self == Self::DockerPilot
+    }
+    pub fn protocol(self) -> &'static str {
+        match self {
+            Self::Strict => "single-attempt-v1",
+            Self::DockerPilot => "single-attempt-docker-pilot-v1",
+        }
+    }
+    pub fn limitations(self) -> Vec<String> {
+        if !self.is_pilot() {
+            return Vec::new();
+        }
+        [
+            "Docker-managed MCP gateway and provider/integration bindings remain accessible, including during replay.",
+            "Docker-generated agent configuration is accepted; full configuration neutrality is not certified.",
+            "Generation uses Docker's Codex network defaults, including OpenAI/code/package hosts, plus crates.io.",
+            "Subscription refresh and exhaustive network isolation are not certified; the pilot checks OAuth mode and its configured network rules.",
+            "Guest disks and archive parsing are bounded; host-side snapshot/cache growth has no enforced quota.",
+        ].into_iter().map(String::from).collect()
+    }
+    pub fn validate_agent(self, agent: Agent) -> Result<()> {
+        ensure!(
+            !self.is_pilot() || agent == Agent::Codex,
+            "Docker pilot generation currently supports Codex only"
+        );
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Limits {
@@ -105,7 +151,9 @@ impl Default for Limits {
             cpus: 4,
             memory_mib: 8192,
             disk_mib: 20480,
-            export_bytes: 64 * 1024 * 1024,
+            // A self-contained terminal project can vendor Windows support
+            // crates too, even when the intended runtime is Linux.
+            export_bytes: 512 * 1024 * 1024,
             export_files: 10000,
             replay_bytes: 1024 * 1024 * 1024,
             replay_files: 100000,
@@ -153,6 +201,7 @@ pub struct Config {
     pub backend: String,
     pub sbx: PathBuf,
     pub environment: String,
+    pub mode: ExecutionMode,
     pub limits: Limits,
 }
 impl Default for Config {
@@ -162,6 +211,7 @@ impl Default for Config {
             backend: "sbx".into(),
             sbx: "sbx".into(),
             environment: "linux-rust-v2".into(),
+            mode: ExecutionMode::Strict,
             limits: Limits::default(),
         }
     }

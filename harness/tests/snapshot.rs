@@ -176,6 +176,35 @@ fn unrelated_native_metadata_is_skipped_but_cannot_disguise_source_entries() {
 }
 
 #[test]
+fn incremental_cache_metadata_is_discarded_without_following_links() {
+    let path = format!(
+        "workspace/target/debug/incremental/{}/object.o",
+        "a".repeat(110)
+    );
+    let mut metadata = pax("path", &path);
+    metadata.extend(pax("linkpath", "workspace/src/main.rs"));
+    let layer = tar(&[
+        ("PaxHeaders/cache", b'x', &metadata),
+        ("workspace/target/cache", b'1', b""),
+        ("workspace/src/main.rs", b'0', b"original source"),
+    ]);
+    let result = extract(&image(&layer), 1024 * 1024).unwrap();
+    assert!(!result.path().join("solution/target").exists());
+    assert_eq!(
+        fs::read(result.path().join("solution/src/main.rs")).unwrap(),
+        b"original source"
+    );
+
+    for override_path in ["workspace/src/evil", "workspace/target/../../escape"] {
+        let disguised = tar(&[
+            ("PaxHeaders/cache", b'x', &pax("path", override_path)),
+            ("workspace/target/cache", b'1', b""),
+        ]);
+        assert!(extract(&image(&disguised), 1024 * 1024).is_err());
+    }
+}
+
+#[test]
 fn snapshot_prefix_cannot_select_host_configuration() {
     let work = tempfile::tempdir().unwrap();
     let path = work.path().join("snapshot.tar");

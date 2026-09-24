@@ -1,8 +1,8 @@
 use crate::{
     archive,
-    config::Config,
+    config::{Config, ExecutionMode},
     process,
-    protocol::{ArtifactStatus, Run, atomic_json},
+    protocol::{ArtifactStatus, Run, archived_task_contract, atomic_json},
     sandbox::{Guest, Role, Sandbox},
     terminal::Terminal,
 };
@@ -18,6 +18,8 @@ use std::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Replay {
     pub schema_version: u32,
+    #[serde(default)]
+    pub mode: ExecutionMode,
     pub preparation: ArtifactStatus,
     pub reason: Option<String>,
     pub source_tree_sha256: Option<String>,
@@ -34,6 +36,7 @@ impl Default for Replay {
     fn default() -> Self {
         Self {
             schema_version: 1,
+            mode: ExecutionMode::Strict,
             preparation: ArtifactStatus::Pending,
             reason: None,
             source_tree_sha256: None,
@@ -137,12 +140,12 @@ cd /workspace
 test -f Cargo.lock
 mkdir -p /replay/vendor
 before=$(sha256sum Cargo.lock)
-cargo vendor --locked --versioned-dirs /replay/vendor > /replay/config.toml
+CARGO_NET_OFFLINE=false cargo vendor --locked --versioned-dirs /replay/vendor > /replay/config.toml
 test "$before" = "$(sha256sum Cargo.lock)"
 "#;
 const PLAY: &str = r#"set -eu
-stty rows 40 cols 120
-test "$(stty size)" = '40 120'
+stty rows "$1" cols "$2"
+test "$(stty size)" = "$1 $2"
 export LANG=C.UTF-8 LC_ALL=C.UTF-8 TERM=xterm-256color
 export CARGO_NET_OFFLINE=true
 cd /workspace
@@ -174,7 +177,12 @@ pub fn prepare_abort<B: Sandbox>(
     state: &Path,
     abort: &AtomicBool,
 ) -> Result<Replay> {
+    ensure!(
+        config.mode == run.mode,
+        "replay mode must match the archived attempt"
+    );
     let mut replay = Replay {
+        mode: run.mode,
         source_tree_sha256: run.export.tree_sha256.clone(),
         ..Replay::default()
     };
@@ -205,11 +213,20 @@ pub fn prepare_abort<B: Sandbox>(
         )?;
         backend.stop(&guest.name)?;
         let exported = work.path().join("replay");
+        // Export diagnostics and any failed snapshots must outlive the staging
+        // directory so an infrastructure failure does not destroy its evidence.
+        let snapshots = state.join("raw").join(&run.run_id).join("snapshots");
+        let replay_snapshot = snapshots.join("replay");
+        let source_snapshot = snapshots.join("source");
+        for directory in [&replay_snapshot, &source_snapshot] {
+            fs::create_dir_all(directory)?;
+            archive::private_dir(directory)?;
+        }
         backend.export(
             &guest.name,
             "replay",
             &exported,
-            work.path(),
+            &replay_snapshot,
             config.limits.replay_bytes,
             config.limits.replay_files,
         )?;
@@ -219,7 +236,7 @@ pub fn prepare_abort<B: Sandbox>(
             &guest.name,
             "workspace",
             &after,
-            work.path(),
+            &source_snapshot,
             config.limits.export_bytes,
             config.limits.export_files,
         )?;
@@ -314,10 +331,17 @@ pub fn play<B: Sandbox>(
     state: &Path,
     abort: &AtomicBool,
 ) -> Result<()> {
+    ensure!(
+        config.mode == run.mode,
+        "playback mode must match the archived attempt; select --mode docker-pilot for a pilot"
+    );
+    let task = archived_task_contract(run_dir, run)?;
     let path = run_dir.join("replay.json");
     let mut replay: Replay = serde_json::from_slice(&archive::read_regular(&path, 1024 * 1024)?)?;
     ensure!(
-        replay.schema_version == 1 && replay.preparation == ArtifactStatus::Complete,
+        replay.schema_version == 1
+            && replay.mode == run.mode
+            && replay.preparation == ArtifactStatus::Complete,
         "no prepared replay bundle; a broken or unpackaged submission is preserved as-is"
     );
     ensure!(
@@ -341,7 +365,7 @@ pub fn play<B: Sandbox>(
         "replay bundle checksum/size mismatch"
     );
     backend.preflight(Role::Playback)?;
-    let _terminal = Terminal::require_120x40()?;
+    let _terminal = Terminal::require_size(task.columns, task.rows)?;
     let result = (|| -> Result<Option<i32>> {
         let work = tempfile::tempdir_in(state)?;
         let unpacked = work.path().join("unpacked");
@@ -381,7 +405,14 @@ pub fn play<B: Sandbox>(
         let exit = process::interactive_abort(
             backend.exec(
                 &guest.name,
-                &["bash".into(), "-c".into(), PLAY.into()],
+                &[
+                    "bash".into(),
+                    "-c".into(),
+                    PLAY.into(),
+                    "bench-play".into(),
+                    task.rows.to_string(),
+                    task.columns.to_string(),
+                ],
                 true,
             )?,
             abort,

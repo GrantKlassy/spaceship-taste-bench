@@ -146,3 +146,29 @@ fn packaging_that_changes_source_is_rejected_without_repairing_the_archive() {
         run.export.files
     );
 }
+
+#[test]
+fn replay_requires_the_archived_mode_before_creating_a_guest() {
+    let (dir, state, run) = setup();
+    let backend = PackageFixture {
+        source: dir.path().join("solution"),
+        mutate_copy: false,
+    };
+    let config = Config {
+        mode: bench::config::ExecutionMode::DockerPilot,
+        ..Config::default()
+    };
+    assert!(replay::prepare(&backend, &config, dir.path(), &run, state.path()).is_err());
+    assert!(
+        replay::play(
+            &backend,
+            &config,
+            dir.path(),
+            &run,
+            state.path(),
+            &std::sync::atomic::AtomicBool::new(false)
+        )
+        .is_err()
+    );
+    assert!(!dir.path().join("replay.json").exists());
+}

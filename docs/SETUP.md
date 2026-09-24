@@ -1,6 +1,6 @@
 # Local setup
 
-The development machine is ready to run trusted diagnostic VMs. **Official attempts remain blocked by backend isolation failures, not by another missing package.** See [VERIFICATION.md](VERIFICATION.md) for measurements and the exact remaining work. No additional agent sign-in is needed to reproduce those failures.
+The development machine has the required toolchain and images. **Codex subscription sign-in and a real pilot smoke test through offline replay now pass.** Follow [PILOT.md](PILOT.md) on another host. Strict attempts remain blocked by their backend isolation requirements. See [VERIFICATION.md](VERIFICATION.md) for the evidence and accepted pilot limitations.
 
 ## Current machine
 
@@ -11,7 +11,7 @@ Checked again on 2026-09-22:
 - Working `docker`/`kvm` group access; KVM API 12; Docker sign-in and deny-all baseline initialized by the user.
 - All 13 sbx diagnostics have passed. Some checks return 12 passes and an optional update-lookup warning; the installed CLI remains 0.45.0. Base, Claude 2.1.278 and Codex 0.155.1 images are built, loaded and recorded in `environment.lock.json`.
 - Real guest creation, trusted file copying, stopped export, dependency connectivity, 120×40 PTY/Ctrl-C and clean-VM fixture replay work.
-- SSH forwarding was disabled during the 2026-09-22 maintenance pass after verifying there were no existing sandboxes. Fresh shell, Claude and Codex guests have no SSH-agent socket. MCP services and unrelated provider bindings remain attached. Production rejects them. No provider credentials were copied, account login performed, or model request started by the harness.
+- SSH forwarding was disabled during the 2026-09-22 maintenance pass after verifying there were no existing sandboxes. Fresh shell, Claude and Codex guests have no SSH-agent socket. MCP services and unrelated provider bindings remain attached; strict mode rejects them and the accepted pilot records them. The user completed broker OAuth, and the pilot smoke test succeeded without copying a normal agent home.
 
 ## Prerequisites on another machine
 
@@ -70,7 +70,7 @@ Copy `bench.example.toml` to ignored `bench.local.toml` to adjust machine-protec
 
 ## Authentication
 
-Subscriptions remain the intended mode. Authentication must be explicitly requested before a task; no official prompt is used to test it. The current isolation failures should be resolved before adding provider accounts to this backend.
+Subscriptions remain the intended mode. Authentication is an explicit user action before a task; the game prompt is not used to test it. The accepted Docker pilot can use the supported broker sign-in now; strict mode still requires isolation certification.
 
 ### Codex
 
@@ -120,4 +120,4 @@ bench run --agent codex --model '<exact-model-id>'
 bench play '<run-id>'
 ```
 
-Those attempt/play commands are not claimed to work in this release. They currently stop before task delivery or execution of an archived submission. Keep the actual review terminal at 120 columns × 40 rows.
+Those strict-mode attempt/play commands are not claimed to work in this release. They currently stop before task delivery or execution of an archived submission. The [Docker pilot](PILOT.md) is available. Keep the actual review terminal at the archived task's dimensions: 124 columns × 69 rows for `spaceship-v1`, or 120×40 for `smoke-v1`.

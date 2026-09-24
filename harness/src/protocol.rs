@@ -1,7 +1,7 @@
 use crate::{
     agents::{Agent, Outcome},
     archive,
-    config::{Limits, parse_component},
+    config::{ExecutionMode, Limits, parse_component},
 };
 use anyhow::{Context, Result, bail, ensure};
 use chrono::{DateTime, Utc};
@@ -35,21 +35,9 @@ pub struct TaskContract {
     pub locale: String,
     pub dependencies: String,
 }
-#[derive(Debug, Clone)]
-pub struct Task {
-    pub contract: TaskContract,
-    pub contract_bytes: Vec<u8>,
-    pub prompt: Vec<u8>,
-    pub prompt_sha256: String,
-    pub contract_sha256: String,
-}
-impl Task {
-    pub fn load(repo: &Path, version: &str) -> Result<Self> {
-        parse_component(version).map_err(anyhow::Error::msg)?;
-        let path = repo.join("tasks").join(version);
-        archive::ensure_directory(&path)?;
-        let contract_bytes = archive::read_regular(&path.join("task.toml"), 64 * 1024)?;
-        let contract: TaskContract = toml::from_str(std::str::from_utf8(&contract_bytes)?)?;
+impl TaskContract {
+    fn parse(bytes: &[u8], version: &str) -> Result<Self> {
+        let contract: Self = toml::from_str(std::str::from_utf8(bytes)?)?;
         ensure!(
             contract.schema_version == SCHEMA && contract.version == version,
             "task version/schema mismatch"
@@ -65,13 +53,31 @@ impl Task {
             "unsupported launch contract"
         );
         ensure!(
-            contract.columns == 120
-                && contract.rows == 40
+            contract.columns > 0
+                && contract.rows > 0
                 && contract.term == "xterm-256color"
                 && contract.locale == "C.UTF-8"
                 && contract.dependencies == "crates.io-only",
             "unsupported terminal/dependency contract"
         );
+        Ok(contract)
+    }
+}
+#[derive(Debug, Clone)]
+pub struct Task {
+    pub contract: TaskContract,
+    pub contract_bytes: Vec<u8>,
+    pub prompt: Vec<u8>,
+    pub prompt_sha256: String,
+    pub contract_sha256: String,
+}
+impl Task {
+    pub fn load(repo: &Path, version: &str) -> Result<Self> {
+        parse_component(version).map_err(anyhow::Error::msg)?;
+        let path = repo.join("tasks").join(version);
+        archive::ensure_directory(&path)?;
+        let contract_bytes = archive::read_regular(&path.join("task.toml"), 64 * 1024)?;
+        let contract = TaskContract::parse(&contract_bytes, version)?;
         let prompt = archive::read_regular(&path.join("prompt.md"), 1024 * 1024)?;
         ensure!(
             !prompt.is_empty() && std::str::from_utf8(&prompt).is_ok(),
@@ -180,6 +186,10 @@ impl Default for Export {
 pub struct Run {
     pub schema_version: u32,
     pub protocol_version: String,
+    #[serde(default)]
+    pub mode: ExecutionMode,
+    #[serde(default)]
+    pub accepted_limitations: Vec<String>,
     pub run_id: String,
     pub task_version: String,
     pub prompt_sha256: String,
@@ -338,7 +348,16 @@ impl RunStore {
     }
 }
 
-pub fn load_run(repo: &Path, id: &str) -> Result<(PathBuf, Run)> {
+pub fn archived_task_contract(run_dir: &Path, run: &Run) -> Result<TaskContract> {
+    let bytes = archive::read_regular(&run_dir.join("task.toml"), 64 * 1024)?;
+    ensure!(
+        archive::hash(&bytes) == run.task_sha256,
+        "task checksum mismatch"
+    );
+    TaskContract::parse(&bytes, &run.task_version)
+}
+
+pub fn load_run_metadata(repo: &Path, id: &str) -> Result<(PathBuf, Run)> {
     parse_component(id).map_err(anyhow::Error::msg)?;
     let path = repo.join("runs").join(id);
     archive::ensure_directory(&path)?;
@@ -348,7 +367,10 @@ pub fn load_run(repo: &Path, id: &str) -> Result<(PathBuf, Run)> {
     )?)?;
     run.requested_limits.validate()?;
     ensure!(
-        run.schema_version == SCHEMA && run.protocol_version == PROTOCOL && run.run_id == id,
+        run.schema_version == SCHEMA
+            && run.protocol_version == run.mode.protocol()
+            && run.accepted_limitations == run.mode.limitations()
+            && run.run_id == id,
         "run identity/schema mismatch"
     );
     ensure!(
@@ -358,10 +380,7 @@ pub fn load_run(repo: &Path, id: &str) -> Result<(PathBuf, Run)> {
         )?) == run.prompt_sha256,
         "prompt checksum mismatch"
     );
-    ensure!(
-        archive::hash(&archive::read_regular(&path.join("task.toml"), 65536)?) == run.task_sha256,
-        "task checksum mismatch"
-    );
+    archived_task_contract(&path, &run)?;
     for (name, expected) in &run.input_sha256 {
         ensure!(
             ["environment.lock.json", "settings.json"].contains(&name.as_str()),
@@ -372,6 +391,11 @@ pub fn load_run(repo: &Path, id: &str) -> Result<(PathBuf, Run)> {
             "input snapshot checksum mismatch"
         );
     }
+    Ok((path, run))
+}
+
+pub fn load_run(repo: &Path, id: &str) -> Result<(PathBuf, Run)> {
+    let (path, run) = load_run_metadata(repo, id)?;
     if run.export.status != ArtifactStatus::Complete {
         bail!("this attempt has no complete source export");
     }

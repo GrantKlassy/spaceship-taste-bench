@@ -1,5 +1,21 @@
 # Attempt protocol: single-attempt-v1
 
+## Docker pilot variant
+
+`mode = "docker-pilot"` selects `single-attempt-docker-pilot-v1` for Codex.
+Pilot metadata records the mode and accepted limitations; `isolation_verified`
+remains false. Docker-managed MCP/credential services, generated agent
+configuration, unverified subscription refresh/exhaustive network coverage, and
+unbounded host snapshot/cache growth do not block this variant. Guest resources,
+image identities, mount/socket checks, explicit network rules, exact prompt
+delivery, immutable exports and cleanup still apply. Replay must use the same
+mode and does not claim the strict credential-free service boundary.
+See [PILOT.md](docs/PILOT.md) for the executable workflow.
+
+The isolation and certification requirements below describe strict mode. The
+single-attempt and preservation rules also apply to the pilot unless overridden
+above. Neither mode runs submissions or their Cargo build scripts on the host.
+
 Each record is one particular attempt at one release/model, followed by a person's observations. Hardware and elapsed time are contextual information. There are no scores, deadline budgets, repeated trials, selection of a best result, or statistical claims.
 
 ## Inputs and freezing
@@ -40,12 +56,16 @@ After completion or abort, all remaining guest processes must stop before a file
 
 The controller validates transport paths and entries, applies documented infrastructure exclusions, bounds extraction, and atomically publishes the source directory. It does not fix source, rewrite manifests, generate a missing lockfile, or edit the README. Checksums cover file bytes, executable flags, and directory records. Infrastructure/auth paths are excluded as described in SECURITY.md; rejected archives retain meaningful failure metadata instead of partial published source.
 
+Failed exports preserve the stopped image and a bounded error log in private state. Successful exports remove the full image after source validation. Retained images are recovery inputs, never published submissions or permission to execute the original guest again.
+
+`bench recover <run-id>` can reprocess a retained stopped image after an export fix. It validates the archived inputs, mode, environment and original resource bounds, refuses an existing solution, and records the previous run metadata plus the snapshot checksum in `export-recovery.json`. Recovery updates export and replay status while retaining the original generation outcome, timestamps and usage. It neither makes a model request nor restarts the generation guest or edits source.
+
 Cleanup guards cover partially created guests and normal error unwinding. Ctrl-C/termination requests are handled by the controller. SIGKILL and host power loss require the exact-name recovery procedure in README. Explicit retries always allocate new IDs and never overwrite prior attempts.
 
 ## Replay and review
 
-Locked vendoring is attempted in a different disposable agent-free VM. Only crates.io lockfile sources are accepted; Git/custom-registry dependencies and escaping paths are rejected. `cargo vendor --locked --versioned-dirs /replay/vendor` must leave the source tree and lockfile unchanged. Cargo's printed source configuration remains separate from the original submission. Failure is recorded without repair.
+Locked vendoring is attempted in a different disposable agent-free VM. Only crates.io lockfile sources are accepted; Git/custom-registry dependencies and escaping paths are rejected. `cargo vendor --locked --versioned-dirs /replay/vendor` must leave the source tree and lockfile unchanged. Packaging sets `CARGO_NET_OFFLINE=false` for registry access even when a submission defaults to offline mode; playback remains frozen and offline. Cargo's printed source configuration remains separate from the original submission. Failure is recorded without repair.
 
-The local bundle is outside Git history and has a checksum, environment identity and source-tree binding in `replay.json`. Play verifies these before importing anything. The replay VM receives the original source, preserved dependencies, and runtime; no agent or credentials, and no networking. It builds with frozen/offline resolution in a real 120×40 UTF-8/256-color PTY.
+The local bundle is outside Git history and has a checksum, environment identity and source-tree binding in `replay.json`. Play verifies these before importing anything. The replay VM receives the original source, preserved dependencies, and runtime; no agent or credentials, and no networking. It builds with frozen/offline resolution in a real UTF-8/256-color PTY at the dimensions recorded in the archived task contract. Both host and guest PTY dimensions are checked.
 
 A person writes `review.md`. There is no automatic subjective assessment. One result does not establish a general ranking of models or tools.

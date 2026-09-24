@@ -1,0 +1,169 @@
+{
+  "previous_run": {
+    "accepted_limitations": [
+      "Docker-managed MCP gateway and provider/integration bindings remain accessible, including during replay.",
+      "Docker-generated agent configuration is accepted; full configuration neutrality is not certified.",
+      "Generation uses Docker's Codex network defaults, including OpenAI/code/package hosts, plus crates.io.",
+      "Subscription refresh and exhaustive network isolation are not certified; the pilot checks OAuth mode and its configured network rules.",
+      "Guest disks and archive parsing are bounded; host-side snapshot/cache growth has no enforced quota."
+    ],
+    "agent": {
+      "cli_version": "0.155.1",
+      "invocation": [
+        "codex",
+        "exec",
+        "--json",
+        "--color",
+        "never",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "-c",
+        "web_search=\"disabled\"",
+        "-c",
+        "mcp_servers={}",
+        "-c",
+        "features.apps=false",
+        "-c",
+        "check_for_update_on_startup=false",
+        "-c",
+        "model_provider=\"sandboxd\"",
+        "-c",
+        "model_providers.sandboxd.name=\"Sandbox Proxy\"",
+        "-c",
+        "model_providers.sandboxd.base_url=\"https://chatgpt.com/backend-api/codex\"",
+        "-c",
+        "model_providers.sandboxd.experimental_bearer_token=\"oai-oat01-proxy-managed\"",
+        "-c",
+        "model_providers.sandboxd.requires_openai_auth=false",
+        "--model",
+        "gpt-6-astra",
+        "-"
+      ],
+      "name": "codex",
+      "reported_model": null,
+      "requested_model": "gpt-6-astra",
+      "settings": {
+        "authentication": {
+          "billing": "chatgpt_subscription",
+          "credential": "broker_sentinel",
+          "provider": "sandboxd",
+          "requires_observed_oauth_mode": true
+        },
+        "cost_budget": null,
+        "external_mcp": "disabled",
+        "external_sandbox_required": true,
+        "harness_retries": 0,
+        "host_config": "not_copied",
+        "new_session": true,
+        "prompt_transport": "stdin_exact_bytes",
+        "provider_web_search": "disabled",
+        "resume": false,
+        "token_budget": null,
+        "wall_clock_budget": null
+      }
+    },
+    "allocated_at": "2026-09-24T20:51:25.166362938Z",
+    "cleanup": "complete",
+    "elapsed_seconds": 776.846368579,
+    "ended_at": "2026-09-24T21:04:40.325555871Z",
+    "environment": {
+      "architecture": "x86_64",
+      "backend": "sbx",
+      "backend_version": "0.45.0",
+      "effective_limits": {
+        "cpus": 4,
+        "disk_mib": 20480,
+        "export_bytes": 536870912,
+        "export_files": 10000,
+        "log_bytes": 268435456,
+        "memory_mib": 8192,
+        "replay_bytes": 1073741824,
+        "replay_files": 100000
+      },
+      "environment": "linux-rust-v2",
+      "image_digest": "sha256:b1657a2811549e166e489a795e401757dc1974a5285855024b850f5586df5c0f",
+      "isolation_verified": false,
+      "network_policy": {
+        "allow_tcp": [
+          "api.openai.com:443",
+          "openai.com:443",
+          "auth.openai.com:443",
+          "chatgpt.com:443",
+          "files.openai.com:443",
+          "registry.npmjs.org:443",
+          "releases.openai.com:443",
+          "api.github.com:443",
+          "github.com:443",
+          "release-assets.githubusercontent.com:443",
+          "codeload.github.com:443",
+          "archive.ubuntu.com:80",
+          "security.ubuntu.com:80",
+          "ports.ubuntu.com:80",
+          "download.docker.com:443",
+          "index.crates.io:443",
+          "static.crates.io:443"
+        ],
+        "default": "deny",
+        "external_enforcement": "sbx",
+        "managed_services_excluded": true
+      },
+      "rust": "rustc 1.97.0 (2d8144b78 2026-07-07)"
+    },
+    "export": {
+      "files": {},
+      "reason": "unsafe_or_failed_source_export; see private diagnostics",
+      "status": "failed",
+      "tree_sha256": null
+    },
+    "harness": {
+      "commit": "52ccee3b7356b1d67285b66ff67c9d976cf7da9f",
+      "dirty": true
+    },
+    "input_sha256": {
+      "environment.lock.json": "d1fa34e92e0c9c937e265783ef0efdcb95aa52dfc6d6e9f4b9d9b34b468240e5",
+      "settings.json": "9691d5f59125bb0a07022209ae34e97c209d51abb00a5ef61b68ad794f6a72df"
+    },
+    "mode": "docker-pilot",
+    "outcome": {
+      "completion": "normal",
+      "cost_usd": null,
+      "exit_code": 0,
+      "stop_reason": "natural_completion",
+      "transcript_truncated": false,
+      "usage": {
+        "cached_input_tokens": 618880,
+        "input_tokens": 670721,
+        "output_tokens": 22569,
+        "reasoning_output_tokens": 4243
+      }
+    },
+    "prompt_sha256": "8901815fc7ded8d46c1615469716394bde189a65f78d88e8ecf859c88691f630",
+    "protocol_version": "single-attempt-docker-pilot-v1",
+    "replay_preparation": "unavailable",
+    "requested_limits": {
+      "cpus": 4,
+      "disk_mib": 20480,
+      "export_bytes": 536870912,
+      "export_files": 10000,
+      "log_bytes": 268435456,
+      "memory_mib": 8192,
+      "replay_bytes": 1073741824,
+      "replay_files": 100000
+    },
+    "run_id": "20260924T205125Z--codex--gpt-6-astra--cb11aa6c14434409",
+    "schema_version": 1,
+    "started_at": "2026-09-24T20:51:43.475723484Z",
+    "task_sha256": "72220a41773e4aa654352cdec9fda4998f21ddf041435a7d62284c7b3e7b6e37",
+    "task_version": "spaceship-v1"
+  },
+  "recovered_at": "2026-09-24T21:11:28.495698800Z",
+  "recovery_harness": {
+    "commit": "52ccee3b7356b1d67285b66ff67c9d976cf7da9f",
+    "dirty": true
+  },
+  "schema_version": 1,
+  "snapshot_bytes": 1308111872,
+  "snapshot_sha256": "607d2dd5c3c7a3dae617380ed2356460de60ae73ed61b2e6a39f2df36bf8e708"
+}

@@ -37,7 +37,10 @@ fn execute() -> Result<()> {
         .config
         .as_deref()
         .or_else(|| default_config.exists().then_some(default_config.as_path()));
-    let config = Config::load(config_path)?;
+    let mut config = Config::load(config_path)?;
+    if let Some(mode) = cli.mode {
+        config.mode = mode;
+    }
     let backend = Sbx::new(&repo, &config)?;
     match cli.command {
         Commands::Doctor { agent, json } => {
@@ -51,7 +54,7 @@ fn execute() -> Result<()> {
             }
             anyhow::ensure!(
                 report.ready,
-                "not ready for official attempts; resolve the blocked checks above"
+                "not ready for the selected mode; resolve the blocked checks above"
             );
             Ok(())
         }
@@ -80,6 +83,12 @@ fn execute() -> Result<()> {
             let abort = process::signals()?;
             let backend = backend.with_abort(abort.clone());
             replay::play(&backend, &config, &dir, &run, &state, &abort)
+        }
+        Commands::Recover { run_id } => {
+            let state = state_dir(&repo)?;
+            let abort = process::signals()?;
+            let backend = backend.with_abort(abort.clone());
+            workflow::recover(&backend, &config, &repo, &state, &run_id, &abort)
         }
         Commands::CheckIntegration => {
             let state = state_dir(&repo)?;

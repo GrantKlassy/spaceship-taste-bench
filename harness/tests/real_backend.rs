@@ -3,6 +3,145 @@ use bench::{
     config::Config,
     sandbox::{self, Sbx},
 };
+
+#[test]
+#[ignore = "requires local sbx and crates.io; exports and replays a trusted vendored fixture, no model call"]
+fn real_vendored_terminal_fixture_export() {
+    use bench::{
+        archive,
+        config::ExecutionMode,
+        process,
+        sandbox::{Guest, Role, Sandbox},
+    };
+    use std::{fs, sync::atomic::AtomicBool};
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap();
+    let state = bench::config::state_dir(repo).unwrap();
+    let work = tempfile::Builder::new()
+        .prefix("vendor-export-check-")
+        .tempdir_in(&state)
+        .unwrap()
+        .keep();
+    archive::private_dir(&work).unwrap();
+    let source = work.join("input");
+    fs::create_dir_all(source.join("src")).unwrap();
+    fs::write(source.join("Cargo.toml"), "[package]\nname='vendored-terminal-fixture'\nversion='0.1.0'\nedition='2021'\n[dependencies]\ncrossterm='=0.28.1'\n").unwrap();
+    fs::write(
+        source.join("src/main.rs"),
+        "fn main() { println!(\"terminal fixture\"); }\n",
+    )
+    .unwrap();
+    let input = work.join("input.tar");
+    archive::pack(&source, &input, 1024 * 1024, 100).unwrap();
+    let config = Config {
+        mode: ExecutionMode::DockerPilot,
+        ..Config::default()
+    };
+    let backend = Sbx::new(repo, &config).unwrap();
+    backend.preflight(Role::Package).unwrap();
+    let guest = Guest::new(&backend, Role::Package).unwrap();
+    backend.verify(&guest.name, Role::Package).unwrap();
+    backend.import(&guest.name, &input, "/workspace").unwrap();
+    let script = "set -eu\ncd /workspace\nmkdir .cargo\ncargo generate-lockfile\ncargo vendor --locked vendor > .cargo/config.toml\nprintf '\\n[net]\\noffline = true\\n' >> .cargo/config.toml\ndu -sb vendor\n";
+    process::control_logged_abort(
+        backend
+            .exec(
+                &guest.name,
+                &["bash".into(), "-c".into(), script.into()],
+                false,
+            )
+            .unwrap(),
+        &work.join("vendor-log"),
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    backend.stop(&guest.name).unwrap();
+    let result = backend.export(
+        &guest.name,
+        "workspace",
+        &work.join("solution"),
+        &work,
+        config.limits.export_bytes,
+        config.limits.export_files,
+    );
+    guest.destroy().unwrap();
+    eprintln!(
+        "Trusted fixture diagnostics (retained on failure): {}",
+        work.display()
+    );
+    result.unwrap();
+    let solution = work.join("solution");
+    bench::replay::validate_submission(&solution).unwrap();
+    let files = archive::inventory(
+        &solution,
+        config.limits.export_bytes,
+        config.limits.export_files,
+    )
+    .unwrap();
+    let run: bench::protocol::Run = serde_json::from_value(serde_json::json!({
+        "schema_version": 1, "protocol_version": config.mode.protocol(),
+        "mode": config.mode, "accepted_limitations": config.mode.limitations(),
+        "run_id": format!("fixture-{}", uuid::Uuid::new_v4().simple()),
+        "task_version": "fixture", "prompt_sha256": "unused", "task_sha256": "unused", "input_sha256": {},
+        "harness": {"commit": null,"dirty":null},
+        "agent": {"name":"codex","cli_version":null,"requested_model":"fixture","reported_model":null,"invocation":[],"settings":{}},
+        "environment": {"backend":"sbx","backend_version":null,"environment":config.environment,"image_digest":null,"rust":null,"architecture":null,"effective_limits":null,"network_policy":null,"isolation_verified":false},
+        "requested_limits": config.limits, "allocated_at":chrono::Utc::now(),"started_at":null,"ended_at":null,"elapsed_seconds":null,
+        "outcome": bench::agents::Outcome::default(),
+        "export": {"status":"complete","reason":null,"tree_sha256":archive::tree_hash(&files).unwrap(),"files":files},
+        "cleanup":"complete","replay_preparation":"pending"
+    })).unwrap();
+    let prepared = bench::replay::prepare(&backend, &config, &work, &run, &state).unwrap();
+    assert_eq!(
+        prepared.preparation,
+        bench::protocol::ArtifactStatus::Complete
+    );
+    let source_tar = work.join("source.tar");
+    archive::pack(
+        &solution,
+        &source_tar,
+        config.limits.export_bytes,
+        config.limits.export_files,
+    )
+    .unwrap();
+    let replay_guest = Guest::new(&backend, Role::Playback).unwrap();
+    backend.verify(&replay_guest.name, Role::Playback).unwrap();
+    backend
+        .import(&replay_guest.name, &source_tar, "/workspace")
+        .unwrap();
+    let bundle = state.join("bundles").join(prepared.local_bundle.unwrap());
+    backend
+        .import(&replay_guest.name, &bundle, "/replay")
+        .unwrap();
+    let output = process::control_logged_abort(
+        backend
+            .exec(
+                &replay_guest.name,
+                &[
+                    "cargo".into(),
+                    "--config".into(),
+                    "/replay/config.toml".into(),
+                    "run".into(),
+                    "--release".into(),
+                    "--frozen".into(),
+                ],
+                false,
+            )
+            .unwrap(),
+        &work.join("playback-log"),
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    assert_eq!(
+        String::from_utf8(output).unwrap().trim(),
+        "terminal fixture"
+    );
+    backend.stop(&replay_guest.name).unwrap();
+    replay_guest.destroy().unwrap();
+    fs::remove_file(bundle).unwrap();
+    fs::remove_dir_all(work).unwrap();
+}
 #[test]
 #[ignore = "requires installed, authenticated, certified local microVM backend; no billable model call"]
 fn real_sentinels_freshness_network_and_offline_fixture() {

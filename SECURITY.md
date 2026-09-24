@@ -1,6 +1,6 @@
 # Security and trust boundaries
 
-**Live checks found required isolation failures. Production generation and playback fail closed.** MicroVM transport and the trusted fixture workflow work, but the backend attaches MCP services and credential bindings that violate this project's contract. Read [the evidence ledger](docs/VERIFICATION.md).
+**Strict generation and playback remain blocked by their isolation requirements.** The separately labeled [Docker pilot](docs/PILOT.md) uses the user's accepted existing sandbox boundary. It allows Docker-managed MCP/credential services and generated agent configuration, and accepts unbounded host snapshot/cache growth. These limitations are archived on every pilot; `isolation_verified` stays false. Pilot generation uses Docker's pinned Codex network defaults plus crates.io. Packaging permits only crates.io and playback uses deny-all, but these guest rules do not isolate Docker-managed services. The strict guarantees below do not apply to those accepted exceptions. Read [the evidence ledger](docs/VERIFICATION.md).
 
 ## Threat model
 
@@ -32,7 +32,7 @@ Image base/index/platform digests and agent package versions were resolved from 
 
 ## Export and filesystem handling
 
-A stopped generation guest is snapshotted through `sbx template save --output`. The adapter never uses `sbx cp` to unpack an untrusted directory onto the host and never invokes guest code after stop to collect source. Actual snapshots remained stopped before and after saving. The parser supports the observed Docker-save manifest plus OCI digest-addressed gzip blobs, and legacy uncompressed layers used by unit fixtures. The temporary full image is private local data, never a public artifact, and is removed after extraction. Template cleanup uses the exact per-run name.
+A stopped generation guest is snapshotted through `sbx template save --output`. The adapter never uses `sbx cp` to unpack an untrusted directory onto the host and never invokes guest code after stop to collect source. Actual snapshots remained stopped before and after saving. The parser supports the observed Docker-save manifest plus OCI digest-addressed gzip blobs, and legacy uncompressed layers used by unit fixtures. The full image is private local data, never a public artifact. Normal successful exports remove it; failed exports retain it with private diagnostics for explicit recovery. Template cleanup uses the exact per-run name.
 
 The host reads tar data as data. It never runs a generated build script, executable, installer, Git hook, archive command, Cargo command, or imported container image. The extractor:
 
@@ -43,7 +43,7 @@ The host reads tar data as data. It never runs a generated build script, executa
 - Bounds entry count, source bytes, transport bytes and replay size. Excluded entries in direct source-tar input are still validated and counted. Snapshot projection discards excluded paths without extracting their contents or applying their file types. This is deliberately strict and may reject otherwise buildable submissions containing unusual generated metadata.
 - Excludes components `.git`, `target`, `.claude`, `.codex`, `.ssh`, `.aws`, `.azure`, `.gnupg`, `.bench`, and files `auth.json`, `.credentials.json`, `.env`, `.env.*` (except `.env.example`). No blanket exclusion of `.cargo`, source dotfiles, or lockfiles.
 
-Image transport parsing ignores filesystem content outside `/workspace` or `/replay`, without extracting it. Native image layers have unrelated Linux filenames and PAX/GNU path metadata; bounded parsing accounts for path overrides so they cannot conceal source entries. Extended metadata on selected source is rejected. Blob hashes are checked; compressed bytes and aggregate decompressed bytes are each capped. Only one expanded layer is stored at a time. Temporary parser storage can therefore exceed the compressed snapshot size; these bounds are distinct from backend snapshot creation.
+Image transport parsing ignores filesystem content outside `/workspace` or `/replay`, without extracting it. Native image layers have unrelated Linux filenames and PAX/GNU path metadata; bounded parsing accounts for path overrides so they cannot conceal source entries. Extended metadata on selected source is rejected. Excluded build-cache paths may carry such metadata, including Rust incremental hard links; the effective path is validated before exclusion and links are never followed. Blob hashes are checked; compressed bytes and aggregate decompressed bytes are each capped. Only one expanded layer is stored at a time. Temporary parser storage can therefore exceed the compressed snapshot size; these bounds are distinct from backend snapshot creation.
 
 Whiteouts represent deletions in layer reconstruction, not exported files. Identical repeated directories emitted around opaque whiteouts are accepted; duplicate files or case aliases are rejected. Source-layer byte accounting is conservative and includes superseded content. This may refuse large snapshots instead of losing protection.
 

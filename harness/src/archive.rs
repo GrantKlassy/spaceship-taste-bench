@@ -661,11 +661,19 @@ impl LayerSelection {
         let Some(relative) = relative else {
             return Ok(None);
         };
-        ensure!(!extended, "extended metadata on exported source");
-        if relative.is_empty() {
-            return Ok(Some(PathBuf::new()));
-        }
-        Ok(Some(safe_path(relative.as_bytes())?))
+        let path = if relative.is_empty() {
+            PathBuf::new()
+        } else {
+            safe_path(relative.as_bytes())?
+        };
+        // Rust's incremental build cache uses PAX paths and hard links. It is
+        // already excluded, but resolve and validate its effective path first
+        // so an override cannot disguise a real source entry as cache data.
+        ensure!(
+            !extended || excluded(&path),
+            "extended metadata on exported source"
+        );
+        Ok(Some(path))
     }
     fn finish(self) -> Result<()> {
         ensure!(

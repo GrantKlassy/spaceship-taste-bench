@@ -1,8 +1,69 @@
 # Evidence and remaining integration work
 
-Updated 2026-09-22 on Ubuntu 24.04 WSL2 amd64, using installed CLI help, official documentation and real local microVMs. Docker sign-in and the deny-all baseline were already configured. No provider login, model request, diagnostic upload or official attempt has been performed.
+Updated 2026-09-24 on Ubuntu 24.04 WSL2 amd64, using installed CLI help, official documentation and real local microVMs. The user completed Codex broker OAuth. Both the smoke task and a real generated game now have verified offline playback. Strict certification remains incomplete.
 
-**The installation and trusted fixture workflow work. Official attempts still fail required backend isolation.** The remaining failures are explicit checks, not configurable trust assertions. `bench doctor`, `bench check-runtimes` and `bench check-integration` return 1 while their required checks fail.
+**The Codex Docker pilot has passed its first real smoke test.** The user accepted Docker's existing sandbox boundary. Pilot mode records its limitations rather than claiming strict isolation; strict attempts retain their certification blockers. See [PILOT.md](PILOT.md).
+
+## First real pilot smoke test
+
+The user selected `gpt-6-astra`. Run
+[`20260923T024635Z--codex--gpt-6-astra--3a5fc1127e994480`](../runs/20260923T024635Z--codex--gpt-6-astra--3a5fc1127e994480/run.json)
+used `smoke-v1` and completed normally. The exact requested model is archived;
+the native stream did not separately report a model identity. Source export,
+locked `itoa` 1.0.15 packaging and guest cleanup completed. A fresh playback VM
+built the preserved source with frozen dependencies under guest deny-all,
+printed `bench smoke: 42` in a 120×40 PTY, and exited 0. See
+[replay metadata](../runs/20260923T024635Z--codex--gpt-6-astra--3a5fc1127e994480/replay.json).
+The smoke task did not freeze `spaceship-v1`. The first game attempt below now
+freezes that task's prompt and contract.
+
+## First spaceship attempt and export correction
+
+Run [`20260924T202031Z--codex--gpt-6-astra--7d4cf0742f054b96`](../runs/20260924T202031Z--codex--gpt-6-astra--7d4cf0742f054b96/run.json)
+used the user's unchanged prompt and completed normally in 419.6 seconds. The
+model produced AFTERLIGHT and its stream recorded six passing tests, a clean
+offline release build and terminal input checks. Source export failed, so no
+solution or playable replay was published. The previous cleanup deleted the
+stopped snapshot and template; neither the snapshot nor its content blobs remain.
+The failed attempt is preserved as recorded, without reconstructing or repairing
+the submission from its transcript.
+
+A trusted fixture using the same `crossterm` 0.28.1 dependency reproduced
+`source layer size limit`: its bundled dependencies occupied about 212 MiB,
+exceeding the 64 MiB source-export limit. The default is now 512 MiB. Failed
+exports retain the stopped snapshot and bounded `export-error.log` in private
+state with mode 0600, including during dependency packaging. Guest and temporary
+template cleanup still runs. A live fixture subsequently passed full source
+export, locked dependency packaging and a fresh guest's frozen offline launch.
+That full check also passed with `[net] offline = true` in the submitted fixture:
+packaging overrides offline mode only for its registry fetch, then verifies that
+the source is unchanged and launches under guest deny-all with frozen resolution.
+The updated harness is installed on PATH.
+
+The user's prompt specifies 124×69. The task contract now matches it, and host
+and guest playback use each run's verified archived dimensions. The existing
+120×40 smoke task remains unchanged. All source and Cargo commands for these
+diagnostics ran inside microVMs; the diagnostics made no model request.
+
+## Playable VESPER attempt
+
+Run [`20260924T205125Z--codex--gpt-6-astra--cb11aa6c14434409`](../runs/20260924T205125Z--codex--gpt-6-astra--cb11aa6c14434409/run.json)
+completed normally and produced VESPER. Its first export encountered PAX paths
+on Rust incremental-cache hard links under the excluded `target/` directory.
+The stopped snapshot was retained. The parser now validates effective paths
+before discarding excluded metadata, while still rejecting extended metadata
+on actual source, traversal and disguised source entries.
+
+`bench recover` restored the unchanged source from that original stopped image,
+then prepared locked dependencies. The [recovery record](../runs/20260924T205125Z--codex--gpt-6-astra--cb11aa6c14434409/export-recovery.json)
+preserves the original failed-export metadata and snapshot checksum. No model
+request or generation-guest restart was used for recovery. Generation outcome,
+timestamps and usage remain unchanged; the private recovery image remains local.
+
+A fresh playback VM built the archived game offline, displayed its title screen
+at 124×69, and accepted launch, pause and quit input. It exited 0 and the guest
+was removed. [Replay metadata](../runs/20260924T205125Z--codex--gpt-6-astra--cb11aa6c14434409/replay.json)
+records complete preparation and launch. The manual review remains blank.
 
 ## Completed in the readiness pass
 
@@ -26,17 +87,17 @@ A separate trusted minimal `schemaVersion: "2"` sandbox kit, with no inherited a
 
 The local MCP registry and governance profile list were empty. The installed settings have no gateway-disable switch, and local `policy deny` exposes only network rules. These results rule out an empty kit or an empty MCP registry as sufficient isolation. See Docker's [MCP modes](https://docs.docker.com/ai/sandboxes/mcp-gateway/#choose-an-mcp-mode), [custom kits](https://docs.docker.com/ai/sandboxes/customize/kits/) and [Codex authentication](https://docs.docker.com/ai/sandboxes/agents/codex/#authentication).
 
-A labeled pilot using Docker's normal gateway-bearing microVM boundary would change the current project contract and is awaiting the user's decision. It is not implemented as a bypass. Otherwise, gateway isolation still needs supported backend/governance enforcement. Host filesystem quotas also still require administrator setup: `sudo -n true` reports that a password is required, and the current ext4 mount has no configured quota.
+The user authorized a labeled pilot using Docker's normal gateway-bearing microVM boundary. `mode = "docker-pilot"` now selects that separate protocol; strict mode still requires supported backend/governance enforcement and host-storage bounds. Pilot runs retain image/resource/mount/socket checks, exact prompt delivery, source preservation and guest cleanup. Generation uses the observed immutable Codex network defaults plus crates.io; packaging permits crates.io; playback uses guest deny-all while acknowledging Docker-managed services. No filesystem quota or global network policy was changed.
 
-## Remaining backend and authentication blockers
+## Remaining strict-mode certification work
 
 1. **MCP gateway and credential scope.** `sbx inspect` still reports an MCP gateway and an attached `mcpgateway` service. Shell guests still receive unrelated provider/integration bindings. A previous fixed HTTP probe reached the gateway under explicit deny-all and received HTTP 400; no MCP tool was invoked. Docker documents that every sandbox starts a gateway, and MCP governance is separate from network policy. The installed local `policy deny` interface only supports networking. [MCP access policies](https://docs.docker.com/ai/sandboxes/governance/access-controls/mcp/) require organization governance; there is no local MCP preset. A supported removal mechanism or independently verified external denial is still needed. An empty server registry or an agent flag does not provide that isolation.
 2. **Actual agent runtime configuration.** Codex gets generated `.codex/config.toml` gateway settings; Claude gets generated `.claude` settings and gateway configuration. The effective neutral settings and broker state still require verification after backend service isolation is resolved. CLI help/version success does not establish which managed settings take effect. Claude's additional storage is now accounted for and passes separate live checks.
-3. **Provider subscription authentication and egress.** The backend currently has no OpenAI or Anthropic provider credential entries. Codex's documented host OAuth command is wired; Claude's subscription subcommand is present in the pinned CLI, but fresh-guest broker reuse remains unverified and `bench auth claude` remains unavailable. Complete the authentication-only flow after service isolation is established, observe token masking/reuse/refresh, prove API-key precedence cannot change billing, and derive the required generation destinations. No guessed production allowlist is enabled. A user's interactive provider sign-in cannot be completed unattended.
+3. **Provider subscription authentication and egress.** Codex host-broker OAuth, fresh-guest OAuth mode, placeholder credentials, absence of an API-key override and a real model request now pass. Long-lived token refresh, credential scoping and strict egress isolation still need certification. Claude's fresh-guest subscription reuse remains unverified and `bench auth claude` remains unavailable. The pilot uses the observed Docker Codex network defaults plus crates.io.
 4. **Host snapshot/cache growth.** Guest root disk limits and parser/extraction limits are verified. `sbx template save --output` can create backend storage/cache before the parser sees the file. Neither an output-size check nor a free-space check is an enforced host-side growth limit. The installed interface has no verified bounded export option. A supported backend limit or administrator-provided, verified filesystem quota is required; passwordless administrator access is unavailable on this host. No storage directories were moved and no filesystems or quotas were changed.
 5. **Remaining network coverage.** Explicit authorizer checks cover hostnames, host/metadata destinations, IPv4, IPv6, loopback/LAN and UDP decisions. Live HTTP probes cover normal proxy use and bypassing proxy environment variables. Under dependency policy, both proxy and direct requests fetch the real sparse index; the downloaded crate checksum matches that index. Denied direct hostnames can fail at DNS, while some raw host/metadata routes close/refuse connections. Those transport failures are recorded as observations, not proof that policy caused them. Complete controlled raw IPv4/IPv6, non-HTTP TCP, UDP/ICMP and redirect acceptance before claiming all paths are certified.
 
-These requirements remain enforced in production. There is no user-editable certificate, unsafe switch, host-execution path or ordinary-container fallback. Provider login alone cannot make an official run pass the current preflight.
+These requirements remain enforced in strict mode. The Docker pilot accepts and records the documented exceptions; it still requires observed OAuth mode and rejects API-key overrides. There is no user-editable certificate, host-execution path or ordinary-container fallback.
 
 ## Export and cancellation evidence
 
@@ -47,9 +108,9 @@ A trusted source with a real vendored dependency completed export and replay on 
 ## Reproduce
 
 ```sh
-bench doctor --agent codex --json
-bench check-runtimes
-bench check-integration
+bench --mode strict doctor --agent codex --json
+bench --mode strict check-runtimes
+bench --mode strict check-integration
 cargo +1.97.0 test --manifest-path harness/Cargo.toml --locked --test real_backend real_ctrl_c -- --ignored --nocapture --test-threads=1
 ```
 
@@ -59,13 +120,15 @@ Raw administrative output remains in private state under bounded `backend/` dire
 
 ## Local results
 
-- Ordinary Rust suite: **62 passed**, six real-backend tests ignored by default.
+- Ordinary Rust suite: **77 passed**, seven opt-in tests ignored by default. Tests cover archived playback dimensions, terminal restoration, snapshot retention, recovery audit history without another model request, and safe exclusion of incremental-cache metadata.
 - Formatting and Clippy with `-D warnings`: passed.
+- Docker pilot `bench check-integration`: passed, including generation policy transitions, production package/playback verification, real registry download/vendoring, stopped source/package export, 120×40 PTY/Ctrl-C, fresh-VM frozen replay and guest cleanup. No model request or task allocation was used.
+- Fresh pilot Codex runtime: pinned CLI/adapter flags, resources, absent SSH socket, effective native network rules plus crates.io, OAuth mode and placeholder credentials all passed. `bench doctor --agent codex --json` reports `ready: true`. Managed configuration/services are recorded pilot warnings. The built-in Codex kit contributes an immutable grouped network allowance; the pilot preserves and validates those destinations, rather than attempting to remove that rule.
 - Fresh v2 Claude/Codex startup, pinned versions, adapter flags, CPU/memory/disk limits and Claude volume freshness: passed. Full runtime checks still fail the configuration/service requirements above.
 - Real dependency vendoring, stopped source/package export and clean-VM frozen replay: passed. Integration still fails required host-service isolation.
 - Live cancellation: all four checks passed: provisioning, post-creation, snapshot export and the guest build phase.
 
-Only the harness, reviewed image preparation and trusted test drivers execute on the host. All fixture Cargo commands execute inside microVMs. There are no archived attempts. The task contract now selects `linux-rust-v2`; prompt bytes were not changed.
+Only the harness, reviewed image preparation and trusted test drivers execute on the host. Fixture and generated-project Cargo commands execute inside microVMs. Three attempts are archived: the successful smoke task, the unrecoverable AFTERLIGHT export, and VESPER with audited export recovery and successful offline playback. All select `linux-rust-v2`; their prompt and task contract bytes are frozen.
 
 ## References
 

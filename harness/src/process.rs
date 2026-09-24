@@ -77,7 +77,7 @@ impl Drop for ChildGuard {
         }
     }
 }
-fn private_file(path: &Path) -> Result<File> {
+pub(crate) fn private_file(path: &Path) -> Result<File> {
     let mut opts = OpenOptions::new();
     opts.write(true).create_new(true);
     #[cfg(unix)]

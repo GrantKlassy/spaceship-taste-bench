@@ -2,7 +2,7 @@
 
 A chronological showcase of individual coding-agent attempts. Each agent gets the same frozen prompt, creates a Rust terminal spaceship game, and leaves an unedited submission. A person plays it and writes a subjective review. There are no scores, evaluator models, rankings, repeated-trial machinery, or generated reviews.
 
-**Status: trusted fixture replay and agent startup work; official attempts remain blocked by backend isolation and authentication integration.** Docker Sandboxes `sbx` 0.45.0 is the sole backend. SSH forwarding has been disabled on this machine and fresh guests have no SSH-agent socket. MCP gateway access, unrelated credential bindings, managed agent configuration and host snapshot/cache bounds remain unresolved. No model request or official attempt has been made. See [verification status](docs/VERIFICATION.md).
+**Status: the Codex pilot passed a real smoke request using requested model `gpt-6-astra`, followed by export, locked dependency packaging and offline replay.** Subscription authentication works on this host. The pilot records the accepted gateway/configuration/storage limitations; strict attempts remain blocked by certification requirements. Docker Sandboxes `sbx` 0.45.0 is the sole backend. See the [pilot workflow](docs/PILOT.md) and [verification status](docs/VERIFICATION.md).
 
 The development host is Ubuntu 24.04 under WSL2, x86-64, with Rust 1.97.0, Docker Engine 29.8.1, Buildx 0.37.1, `sbx` 0.45.0, KVM access, Docker sign-in and a deny-all baseline. The default environment is now `linux-rust-v2`: it preserves v1's packages and fixes Claude startup permissions and agent image flavor labels. The original v1 images remain preserved.
 
@@ -16,7 +16,7 @@ cargo +1.97.0 install --path harness --locked
 bench doctor
 ```
 
-`doctor` reports measured host/settings/image/account checks separately from unresolved integration requirements. It exits 1 while any required check is blocked. Use `bench doctor --agent codex --json` for a structured report scoped to the intended agent. It never calls a model, logs in, initializes network policy, or copies normal agent configuration. The CLI also accepts `--repo /path/to/checkout` and `--config /path/to/config.toml`.
+`doctor` reports readiness for the selected mode. It exits 1 while a required check is blocked. Use `bench doctor --agent codex --json` for structured output. Pilot mode verifies an available account in a disposable guest, including its network policy; it never calls a model, logs in, changes global policy, or copies your normal agent configuration. The CLI also accepts `--mode strict|docker-pilot`, `--repo /path/to/checkout` and `--config /path/to/config.toml`.
 
 To work on the harness:
 
@@ -32,8 +32,8 @@ Only the harness is compiled on the host. Submissions and their Cargo build scri
 
 | Host | Status |
 | --- | --- |
-| Ubuntu 24.04+ amd64 with usable KVM | Enabled for trusted diagnostics; official attempts blocked by the service-isolation failures |
-| WSL2 Ubuntu amd64 | Linux-local creation/copy/export/PTY transport verified on the development machine; the same isolation failures apply |
+| Ubuntu 24.04+ amd64 with usable KVM | Enabled for the Codex Docker pilot; strict certification remains blocked |
+| WSL2 Ubuntu amd64 | Linux-local creation/copy/export/PTY transport verified; supports the same pilot mode |
 | Fedora / other Linux | Rust CLI may build; backend support and this integration are unverified, so no official runs |
 | Apple silicon, macOS 14+ | Vendor-supported backend; this resolved amd64 environment and harness transport are not enabled there |
 | Intel macOS / native Windows | Unsupported by this harness |
@@ -60,9 +60,17 @@ bench auth codex
 bench auth claude
 ```
 
-`auth codex` delegates to the documented host-side `sbx secret set openai --oauth` flow when that CLI is installed. `auth claude` currently fails with the documented subscription setup and the unresolved fresh-guest broker limitation. Neither copies your normal agent home or silently changes to API billing. No provider authentication was performed during development. [Credential details and alternatives](docs/SETUP.md#authentication).
+`auth codex` delegates to the documented host-side `sbx secret set openai --oauth` flow when that CLI is installed. `auth claude` currently fails with the documented subscription setup and the unresolved fresh-guest broker limitation. Neither copies your normal agent home or silently changes to API billing. The user has completed Codex broker OAuth on this host. [Credential details and alternatives](docs/SETUP.md#authentication).
 
-## First attempt, once certification is complete
+## First pilot
+
+Follow [PILOT.md](docs/PILOT.md). Select `mode = "docker-pilot"` in ignored
+`bench.local.toml`, authenticate with `bench auth codex`, and check readiness with
+`bench doctor --agent codex`. The separate `smoke-v1` task can exercise a real request and replay
+without freezing your game prompt. Pilot records explicitly state their accepted
+limitations and never claim strict isolation certification.
+
+## Strict attempts, once certification is complete
 
 You may edit `tasks/spaceship-v1/prompt.md` before its first allocated attempt. Its bytes, including the final newline, are delivered exactly once through stdin. The task contract is frozen too. Once there is an archived attempt, make a new version for changes:
 
@@ -71,7 +79,7 @@ cp -r tasks/spaceship-v1 tasks/spaceship-v2
 # Edit spaceship-v2/prompt.md and change version in spaceship-v2/task.toml.
 ```
 
-After the blockers in [VERIFICATION.md](docs/VERIFICATION.md) are resolved:
+In strict mode, after the blockers in [VERIFICATION.md](docs/VERIFICATION.md) are resolved:
 
 ```sh
 bench run --agent claude --model '<exact-model-id>'
@@ -80,19 +88,23 @@ bench run --agent codex --model '<exact-model-id>'
 bench run --agent codex --model '<exact-model-id>' --task spaceship-v2
 ```
 
-These commands currently fail **before prompt delivery**. There is no `--unsafe`, mock-backend, fallback, or certification-bypass switch. Failed prerequisite checks are not attempts. A failure after allocation retains a distinct run directory; an explicitly started retry gets a new ID.
+Strict-mode commands currently fail **before prompt delivery**. The separate Docker pilot changes the recorded protocol rather than certifying strict isolation. There is no host/container fallback. Failed prerequisite checks are not attempts. A failure after allocation retains a distinct run directory; an explicitly started retry gets a new ID.
 
 Once a task finishes, the controller stops the guest, exports validated source, destroys the guest, and attempts locked dependency packaging in another guest. Normal completion can produce a broken game. Packaging does not fix it. A question in the final response receives no answer. [Full protocol](PROTOCOL.md).
 
+Source exports allow up to 512 MiB, including dependencies bundled by the agent. If an export fails, its stopped snapshot and `export-error.log` remain in private state for diagnosis; cleanup still removes the guest and temporary template.
+
+After correcting an export problem, recover the same stopped snapshot with `bench recover '<run-id>'`. This makes no model request and preserves the previous run metadata and snapshot checksum in `export-recovery.json`. It refuses to overwrite an existing solution and prepares locked dependencies from the recovered source.
+
 ## Play and review
 
-With a prepared replay bundle, resize your actual terminal to **120 columns × 40 rows**, then:
+With a prepared replay bundle, resize your actual terminal to the dimensions in the run's archived `task.toml` (**124 columns × 69 rows** for `spaceship-v1`, 120×40 for `smoke-v1`), then:
 
 ```sh
 bench play '<run-id>'
 ```
 
-The play controller verifies hashes, requests a fresh agent-free guest, checks isolation, supplies source and vendored dependencies separately, verifies the PTY size, and runs `cargo --config /replay/config.toml run --release --frozen`. A trusted fixture with an exact crates.io dependency completed locked vendoring, export/package and fresh-VM offline replay. PTY dimensions, Ctrl-C and terminal restoration passed live checks. Production play still fails before importing a submission because backend-injected services violate its credential-free, offline contract. A `TERM` value alone is not accepted as evidence of dimensions.
+The play controller verifies hashes, requests a fresh shell guest, checks the selected boundary, supplies source and vendored dependencies separately, verifies the PTY size, and runs `cargo --config /replay/config.toml run --release --frozen`. Strict playback remains blocked by backend-injected services. Pilot playback accepts and records those services while enforcing guest deny-all networking and frozen dependencies. A `TERM` value alone is not accepted as evidence of dimensions.
 
 Write your own `runs/<run-id>/review.md` using the included questions. Screenshots and clips go in `media/`; large media are ignored by default. Build/launch status is operational information, not a game-quality score.
 
@@ -107,6 +119,7 @@ runs/<UTC>--<agent>--<model-slug>--<random-64-bit-suffix>/
   run.json                  controller-owned metadata and checksums
   solution/                 validated source; never repaired
   replay.json               independent preparation/play status and bundle checksum
+  export-recovery.json      prior metadata and snapshot checksum, when recovered
   review.md                 manual review template
   media/
 ```
