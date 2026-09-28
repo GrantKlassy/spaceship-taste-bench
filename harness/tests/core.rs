@@ -103,8 +103,9 @@ fn pilot_is_explicit_and_cannot_be_confused_with_strict_mode() {
     assert_eq!(Config::default().mode, ExecutionMode::Strict);
     let pilot: Config = toml::from_str("mode = 'docker-pilot'").unwrap();
     assert_eq!(pilot.mode, ExecutionMode::DockerPilot);
-    assert!(!pilot.mode.limitations().is_empty());
-    assert!(ExecutionMode::Strict.limitations().is_empty());
+    assert!(!pilot.mode.limitations(Agent::Codex).is_empty());
+    assert!(!pilot.mode.limitations(Agent::Claude).is_empty());
+    assert!(ExecutionMode::Strict.limitations(Agent::Codex).is_empty());
     assert!(toml::from_str::<Config>("mode = 'unsafe'").is_err());
     let cli = Cli::try_parse_from(["bench", "--mode", "docker-pilot", "doctor"]).unwrap();
     assert_eq!(cli.mode, Some(ExecutionMode::DockerPilot));
@@ -203,7 +204,13 @@ fn adapters_fit_the_backend_argument_contract_and_require_subscription_billing()
         let args = agent.invocation("exact-model");
         assert!(args.iter().all(|arg| !arg.is_empty()));
         match agent {
-            Agent::Claude => assert!(args.iter().any(|arg| arg == "--setting-sources=")),
+            Agent::Claude => {
+                assert!(args.iter().any(|arg| arg == "--setting-sources="));
+                assert_eq!(
+                    agent.settings()["authentication"]["billing"],
+                    "claude_subscription"
+                );
+            }
             Agent::Codex => {
                 let overrides = args
                     .windows(2)

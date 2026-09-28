@@ -131,7 +131,6 @@ pub fn run<B: Sandbox>(
         task_version,
     } = attempt;
     crate::config::validate_model(model).map_err(anyhow::Error::msg)?;
-    config.mode.validate_agent(agent)?;
     let task = Task::load(repo, task_version)?;
     ensure!(
         task.contract.environment == config.environment,
@@ -151,7 +150,7 @@ pub fn run<B: Sandbox>(
         "settings.json".into(),
         serde_json::to_vec_pretty(&json!({
             "schema_version": 1, "backend": config.backend, "environment": config.environment,
-            "mode": config.mode, "accepted_limitations": config.mode.limitations(),
+            "mode": config.mode, "accepted_limitations": config.mode.limitations(agent),
             "limits": config.limits, "agent": agent.settings()
         }))?,
     );
@@ -169,7 +168,7 @@ pub fn run<B: Sandbox>(
         schema_version: protocol::SCHEMA,
         protocol_version: config.mode.protocol().into(),
         mode: config.mode,
-        accepted_limitations: config.mode.limitations(),
+        accepted_limitations: config.mode.limitations(agent),
         run_id: id.clone(),
         task_version: task_version.into(),
         prompt_sha256: task.prompt_sha256.clone(),

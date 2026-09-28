@@ -4,7 +4,7 @@ use crate::{
     archive,
     config::{Config, parse_component, state_dir},
     inspection::{
-        CodexBroker, GuestProbe, Inspect, validate_allowlist_policy, validate_denial,
+        ClaudeBroker, CodexBroker, GuestProbe, Inspect, validate_allowlist_policy, validate_denial,
         validate_offline_policy, validate_offline_policy_with_masked_allows,
         validate_protocol_denial,
     },
@@ -48,6 +48,24 @@ const CODEX_DESTINATIONS: &[&str] = &[
     "index.crates.io:443",
     "static.crates.io:443",
 ];
+// Observed built-in Claude allowances in sbx 0.45.0, plus crates.io.
+const CLAUDE_DESTINATIONS: &[&str] = &[
+    "api.anthropic.com:443",
+    "platform.claude.com:443",
+    "downloads.claude.ai:443",
+    "claude.com:443",
+    "code.claude.com:443",
+    "mcp-proxy.anthropic.com:443",
+    "bridge.claudeusercontent.com:443",
+    "index.crates.io:443",
+    "static.crates.io:443",
+];
+fn generation_destinations(agent: Agent) -> &'static [&'static str] {
+    match agent {
+        Agent::Codex => CODEX_DESTINATIONS,
+        Agent::Claude => CLAUDE_DESTINATIONS,
+    }
+}
 // sbx 0.45's built-in Claude runtime attaches these fresh ext4 devices in
 // addition to the root disk. Charge their full nominal capacities to the
 // configured disk budget, including filesystem overhead.
@@ -409,10 +427,6 @@ impl Sbx {
             if selected.is_some_and(|selected| selected != agent) {
                 continue;
             }
-            if let Err(error) = self.config.mode.validate_agent(agent) {
-                report.push("agent", Status::Blocked, error.to_string());
-                continue;
-            }
             match Role::Generation(agent).root_disk_mib(self.config.limits.disk_mib) {
                 Ok(root_mib) => report.push(
                     &format!("disk_{agent}"),
@@ -435,7 +449,11 @@ impl Sbx {
             }
         }
         if self.config.mode.is_pilot() {
-            for limitation in self.config.mode.limitations() {
+            for limitation in self
+                .config
+                .mode
+                .limitations(selected.unwrap_or(Agent::Codex))
+            {
                 report.push("pilot_limitation", Status::Warning, limitation);
             }
             if report.ready {
@@ -488,7 +506,6 @@ impl Sbx {
             if selected.is_some_and(|selected| selected != agent) {
                 continue;
             }
-            self.config.mode.validate_agent(agent)?;
             let role = Role::Generation(agent);
             self.prerequisites(role)?;
             let result = (|| -> Result<()> {
@@ -545,16 +562,14 @@ impl Sbx {
                 args.push("--help".into());
                 self.control(self.exec(&guest.name, &args, false)?)?;
                 report.push(&format!("{agent}_runtime"), Status::Pass, "Fresh built-in runtime starts, reports the pinned version and accepts the adapter flags.");
-                if agent == Agent::Codex {
-                    if self.config.mode.is_pilot() {
-                        self.configure_generation(&guest.name)?;
-                        report.push("codex_network", Status::Pass, "Docker's pinned Codex network defaults plus crates.io are configured; checked unrelated destinations remain denied. Docker-managed services are outside this guarantee.");
-                    }
-                    match self.codex_broker(&guest.name)?.validate_subscription() {
-                        Ok(()) => report.push("codex_subscription", Status::Pass,
-                            "Fresh guest reports broker OAuth mode and contains only the expected auth placeholder. Refresh and provider access still require verification."),
-                        Err(error) => report.push("codex_subscription", Status::Blocked, error.to_string()),
-                    }
+                if self.config.mode.is_pilot() {
+                    self.configure_generation(&guest.name, agent)?;
+                    report.push(&format!("{agent}_network"), Status::Pass, format!("Docker's pinned {agent} network defaults plus crates.io are configured; checked unrelated destinations remain denied. Docker-managed services are outside this guarantee."));
+                }
+                match self.validate_subscription(&guest.name, agent) {
+                    Ok(()) => report.push(&format!("{agent}_subscription"), Status::Pass,
+                        "Fresh guest reports broker OAuth mode and contains only the expected auth placeholder. Refresh and provider access still require verification."),
+                    Err(error) => report.push(&format!("{agent}_subscription"), Status::Blocked, error.to_string()),
                 }
                 for result in [
                     self.inspect(&guest.name)?.validate_services(),
@@ -624,17 +639,78 @@ impl Sbx {
                 eprintln!(
                     "Opening the backend's supported OpenAI OAuth flow. No benchmark task will start."
                 );
-                let exit =
-                    process::interactive(self.command(&["secret", "set", "openai", "--oauth"]))?;
+                let exit = process::interactive_abort(
+                    self.command(&["secret", "set", "openai", "--oauth"]),
+                    &self.abort,
+                )?;
                 ensure!(exit == Some(0), "backend OAuth did not complete");
                 eprintln!(
                     "OAuth flow completed. Run: bench doctor --agent codex. Fresh-guest checks verify subscription mode before a task starts."
                 );
                 Ok(())
             }
-            Agent::Claude => anyhow::bail!(
-                "Claude subscription auth is documented as /login inside a sandbox, but safe reuse through the broker in a fresh mountless guest is unverified. See docs/SETUP.md. bench will not copy ~/.claude or silently select API billing."
-            ),
+            Agent::Claude => {
+                let role = Role::Generation(agent);
+                self.prerequisites(role)?;
+                disabled_setting(
+                    &self.control(self.command(&[
+                        "settings",
+                        "get",
+                        "--json",
+                        "ssh.agentForwardingEnabled",
+                    ]))?,
+                    "ssh.agentForwardingEnabled",
+                )?;
+                let guest = Guest::new(self, role)?;
+                self.inspect(&guest.name)?.validate_identity(
+                    &guest.name,
+                    role,
+                    self.image(role)?,
+                    &self.config.limits,
+                )?;
+                self.verify_ports(&guest.name)?;
+                let probe = self.probe(&guest.name)?;
+                probe.validate_resources(&self.config.limits, role)?;
+                probe.validate_sockets()?;
+                ensure!(
+                    matches!(
+                        self.inspect(&guest.name)?.auth_mode.as_deref(),
+                        Some("none · anthropic") | Some("oauth · anthropic")
+                    ),
+                    "An Anthropic API key takes precedence over subscription login. Remove that broker entry explicitly before running bench auth claude."
+                );
+                self.configure_allowlist(&guest.name, CRATES_DESTINATIONS, CLAUDE_DESTINATIONS)?;
+                eprintln!(
+                    "Opening Claude subscription login in a disposable guest. Follow the browser link; no benchmark task will start. Authentication output is not logged."
+                );
+                let exit = process::interactive_abort(
+                    self.exec(
+                        &guest.name,
+                        &[
+                            "claude".into(),
+                            "auth".into(),
+                            "login".into(),
+                            "--claudeai".into(),
+                        ],
+                        true,
+                    )?,
+                    &self.abort,
+                )?;
+                ensure!(
+                    exit == Some(0),
+                    "Claude subscription login did not complete"
+                );
+                guest.destroy()?;
+                // The login guest's files are never copied. Require Docker to
+                // seed broker placeholders independently into a new guest.
+                let fresh = Guest::new(self, role)?;
+                self.validate_subscription(&fresh.name, agent)?;
+                fresh.destroy()?;
+                eprintln!(
+                    "Claude subscription login is reusable in a fresh guest. Run: bench doctor --agent claude."
+                );
+                Ok(())
+            }
         }
     }
     fn image(&self, role: Role) -> Result<&Image> {
@@ -678,6 +754,28 @@ impl Sbx {
             false,
         )?)?)?)
     }
+    fn claude_broker(&self, name: &str) -> Result<ClaudeBroker> {
+        Ok(serde_json::from_slice(&self.control(self.exec(
+            name,
+            &[
+                "python3".into(),
+                "-c".into(),
+                include_str!("../probes/claude_broker.py").into(),
+            ],
+            false,
+        )?)?)?)
+    }
+    fn validate_subscription(&self, name: &str, agent: Agent) -> Result<()> {
+        match agent {
+            Agent::Codex => self.codex_broker(name)?.validate_subscription(),
+            // SBX_CRED_ANTHROPIC_MODE remains "none" even with a saved login in
+            // sbx 0.45.0. Pair backend mode with observed guest placeholders and
+            // native subscription status; no one signal is sufficient alone.
+            Agent::Claude => self
+                .claude_broker(name)?
+                .validate_subscription(self.inspect(name)?.auth_mode.as_deref()),
+        }
+    }
     fn runtime_freshness(&self, name: &str, marker: &str, mode: &str) -> Result<()> {
         self.control(self.exec(
             name,
@@ -715,11 +813,23 @@ impl Sbx {
         Ok(())
     }
     fn verify_offline_policy(&self, name: &str) -> Result<()> {
-        let bytes = self.control(self.command(&["policy", "ls", name, "--json"]))?;
-        if self.config.mode.is_pilot() {
-            validate_offline_policy_with_masked_allows(&bytes, name, CODEX_DESTINATIONS)?;
+        let accepted: Vec<_> = if self.config.mode.is_pilot() {
+            CODEX_DESTINATIONS
+                .iter()
+                .chain(CLAUDE_DESTINATIONS)
+                .copied()
+                .collect()
         } else {
+            Vec::new()
+        };
+        self.verify_offline_policy_with_allows(name, &accepted)
+    }
+    fn verify_offline_policy_with_allows(&self, name: &str, accepted: &[&str]) -> Result<()> {
+        let bytes = self.control(self.command(&["policy", "ls", name, "--json"]))?;
+        if accepted.is_empty() {
             validate_offline_policy(&bytes, name)?;
+        } else {
+            validate_offline_policy_with_masked_allows(&bytes, name, accepted)?;
         }
         for target in [
             "example.com:443",
@@ -789,18 +899,18 @@ impl Sbx {
     fn configure_crates(&self, name: &str) -> Result<()> {
         self.configure_allowlist(name, CRATES_DESTINATIONS, CRATES_DESTINATIONS)
     }
-    fn configure_generation(&self, name: &str) -> Result<()> {
+    fn configure_generation(&self, name: &str, agent: Agent) -> Result<()> {
         ensure!(
             self.config.mode.is_pilot(),
             "generation network policy is currently available only for the Docker pilot"
         );
-        // Docker supplies the immutable Codex rules; add only Rust registry access.
-        self.configure_allowlist(name, CRATES_DESTINATIONS, CODEX_DESTINATIONS)
+        // Docker supplies the immutable agent rules; add only Rust registry access.
+        self.configure_allowlist(name, CRATES_DESTINATIONS, generation_destinations(agent))
     }
     fn configure_allowlist(&self, name: &str, added: &[&str], targets: &[&str]) -> Result<()> {
         // Never changes the global baseline or any other guest. Start closed and
         // install narrow exceptions before removing this guest's blanket deny.
-        self.verify_offline_policy(name)?;
+        self.verify_offline_policy_with_allows(name, targets)?;
         self.checked(&[
             "policy",
             "allow",
@@ -824,12 +934,17 @@ impl Sbx {
             name,
             targets,
         )?;
-        for target in CODEX_DESTINATIONS.iter().copied().chain([
-            "example.com:443",
-            "api.anthropic.com:443",
-            "169.254.169.254:80",
-            "host.docker.internal:80",
-        ]) {
+        let checked: std::collections::BTreeSet<_> = CODEX_DESTINATIONS
+            .iter()
+            .chain(CLAUDE_DESTINATIONS)
+            .copied()
+            .chain([
+                "example.com:443",
+                "169.254.169.254:80",
+                "host.docker.internal:80",
+            ])
+            .collect();
+        for target in checked {
             let allowed = targets.contains(&target);
             let (exit, bytes) = self.control_output(self.command(&[
                 "policy",
@@ -865,9 +980,6 @@ impl Sandbox for Sbx {
     fn preflight(&self, role: Role) -> Result<()> {
         self.prerequisites(role)?;
         self.evidence_gate()?;
-        if let Role::Generation(agent) = role {
-            self.config.mode.validate_agent(agent)?;
-        }
         for key in [
             "ssh.agentForwardingEnabled",
             "clipboard.imagePaste",
@@ -941,9 +1053,6 @@ impl Sandbox for Sbx {
         Ok(())
     }
     fn verify(&self, name: &str, role: Role) -> Result<EnvironmentIdentity> {
-        if let Role::Generation(agent) = role {
-            self.config.mode.validate_agent(agent)?;
-        }
         let inspect = self.inspect(name)?;
         inspect.validate_identity(name, role, self.image(role)?, &self.config.limits)?;
         self.verify_ports(name)?;
@@ -956,13 +1065,13 @@ impl Sandbox for Sbx {
             probe.validate_machine(&self.config.limits, role)?;
             probe.validate_services()?;
         }
-        if role == Role::Generation(Agent::Codex) {
-            self.codex_broker(name)?.validate_subscription()?;
+        if let Role::Generation(agent) = role {
+            self.validate_subscription(name, agent)?;
         }
         if role == Role::Package {
             self.configure_crates(name)?;
-        } else if role == Role::Generation(Agent::Codex) && self.config.mode.is_pilot() {
-            self.configure_generation(name)?;
+        } else if let Role::Generation(agent) = role {
+            self.configure_generation(name, agent)?;
         } else {
             self.verify_offline_policy(name)?;
         }
@@ -978,8 +1087,12 @@ impl Sandbox for Sbx {
             architecture: Some(probe.architecture),
             effective_limits: Some(self.config.limits.clone()),
             network_policy: Some(
-                if role == Role::Package || role == Role::Generation(Agent::Codex) {
-                    serde_json::json!({"external_enforcement": "sbx", "default": "deny", "allow_tcp": if role == Role::Package { CRATES_DESTINATIONS } else { CODEX_DESTINATIONS }, "managed_services_excluded": self.config.mode.is_pilot()})
+                if role == Role::Package || matches!(role, Role::Generation(_)) {
+                    let targets = match role {
+                        Role::Generation(agent) => generation_destinations(agent),
+                        _ => CRATES_DESTINATIONS,
+                    };
+                    serde_json::json!({"external_enforcement": "sbx", "default": "deny", "allow_tcp": targets, "managed_services_excluded": self.config.mode.is_pilot()})
                 } else {
                     serde_json::json!({"external_enforcement": "sbx", "explicit_deny": ["**"], "managed_services_excluded": self.config.mode.is_pilot()})
                 },
@@ -1500,6 +1613,35 @@ mod tests {
         backend.config.mode = crate::config::ExecutionMode::DockerPilot;
         backend.evidence_gate().unwrap();
         assert_eq!(backend.accepted_status(), Status::Warning);
+    }
+
+    #[test]
+    fn generation_policy_rejects_the_other_providers_rules() {
+        for (agent, other) in [(Agent::Claude, Agent::Codex), (Agent::Codex, Agent::Claude)] {
+            let mut policy: Value =
+                serde_json::from_slice(include_bytes!("../tests/fixtures/sbx/crates-policy.json"))
+                    .unwrap();
+            let rules = policy["rules"].as_array_mut().unwrap();
+            let mut native = rules.last().unwrap().clone();
+            native["editable"] = json!(false);
+            native["resources"] = json!(
+                generation_destinations(agent)
+                    .iter()
+                    .filter(|target| !CRATES_DESTINATIONS.contains(target))
+                    .collect::<Vec<_>>()
+            );
+            rules.push(native);
+            let bytes = serde_json::to_vec(&policy).unwrap();
+            validate_allowlist_policy(&bytes, "bench-observed", generation_destinations(agent))
+                .unwrap();
+            assert!(
+                validate_allowlist_policy(&bytes, "bench-observed", generation_destinations(other))
+                    .is_err()
+            );
+            assert!(
+                validate_allowlist_policy(&bytes, "bench-observed", CRATES_DESTINATIONS).is_err()
+            );
+        }
     }
 
     fn diagnostic_fixture() -> Value {

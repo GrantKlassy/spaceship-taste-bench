@@ -369,7 +369,7 @@ pub fn load_run_metadata(repo: &Path, id: &str) -> Result<(PathBuf, Run)> {
     ensure!(
         run.schema_version == SCHEMA
             && run.protocol_version == run.mode.protocol()
-            && run.accepted_limitations == run.mode.limitations()
+            && run.accepted_limitations == run.mode.limitations(run.agent.name)
             && run.run_id == id,
         "run identity/schema mismatch"
     );

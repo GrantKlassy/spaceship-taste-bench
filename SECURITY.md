@@ -1,6 +1,6 @@
 # Security and trust boundaries
 
-**Strict generation and playback remain blocked by their isolation requirements.** The separately labeled [Docker pilot](docs/PILOT.md) uses the user's accepted existing sandbox boundary. It allows Docker-managed MCP/credential services and generated agent configuration, and accepts unbounded host snapshot/cache growth. These limitations are archived on every pilot; `isolation_verified` stays false. Pilot generation uses Docker's pinned Codex network defaults plus crates.io. Packaging permits only crates.io and playback uses deny-all, but these guest rules do not isolate Docker-managed services. The strict guarantees below do not apply to those accepted exceptions. Read [the evidence ledger](docs/VERIFICATION.md).
+**Strict generation and playback remain blocked by their isolation requirements.** The separately labeled [Docker pilot](docs/PILOT.md) uses the user's accepted existing sandbox boundary. It allows Docker-managed MCP/credential services and generated agent configuration, and accepts unbounded host snapshot/cache growth. These limitations are archived on every pilot; `isolation_verified` stays false. Pilot generation uses Docker's pinned network defaults for the selected agent plus crates.io. Packaging permits only crates.io and playback uses deny-all, but these guest rules do not isolate Docker-managed services. The strict guarantees below do not apply to those accepted exceptions. Read [the evidence ledger](docs/VERIFICATION.md).
 
 ## Threat model
 
@@ -18,9 +18,17 @@ Docker's [local network policy](https://docs.docker.com/ai/sandboxes/governance/
 
 `web_search="disabled"` and Apps disabled are passed to Codex separately, because provider-hosted tools need not follow a guest firewall. Claude's WebSearch/WebFetch, Chrome and external MCP configuration are disabled using its supported flags; safe mode skips normal customizations. Empty guest agent homes and effective settings still need inspection, including managed settings and backend-generated configuration. No custom credential proxy is implemented.
 
-Prefer subscriptions through Docker's documented OAuth broker. Real provider tokens should remain in the host credential store, with only proxy-managed sentinels entering guests. `bench auth codex` invokes the documented broker OAuth command; Claude fresh-guest subscription reuse is blocked pending observation. Existing API keys take precedence over OAuth according to Docker's documentation; this must be inspected before attempts. API billing requires an explicit future configuration, not automatic substitution. Raw auth output is never captured into benchmark artifacts. Never copy normal `~/.claude`, `~/.codex`, skills or memory directories into an image or run.
+Prefer subscriptions through Docker's documented OAuth broker. Real provider tokens should remain in the host credential store, with only proxy-managed sentinels entering guests. `bench auth codex` invokes the documented broker OAuth command. `bench auth claude` runs native subscription login in a disposable mountless guest, destroys it and verifies broker reuse in a new guest. Claude attempts require observed OAuth mode, expected access/refresh placeholders, a native Claude subscription login and no authentication/provider overrides. Existing API keys take precedence over OAuth according to Docker's documentation; they block subscription attempts. API billing requires an explicit future configuration, not automatic substitution. Raw auth output is never captured into benchmark artifacts. Never copy normal `~/.claude`, `~/.codex`, skills or memory directories into an image or run.
 
 The Codex adapter explicitly reconstructs the pinned backend's OAuth provider routing while ignoring generated user configuration: provider `sandboxd`, endpoint `https://chatgpt.com/backend-api/codex`, and the non-secret `oai-oat01-proxy-managed` bearer. It does not force native ChatGPT login: Docker's broker uses a placeholder `OPENAI_API_KEY` auth file even for subscription sessions, so native `forced_login_method="chatgpt"` is incompatible with that integration. A fresh guest must report `SBX_CRED_OPENAI_MODE=oauth`, have exactly the expected placeholder auth file, and have no API-key override. Those observations are necessary but do not establish refresh, egress or service isolation; the production gate remains closed.
+
+For Claude, sbx 0.45.0 leaves `SBX_CRED_ANTHROPIC_MODE=none` even after the broker
+seeds OAuth credentials. The harness instead requires backend inspection to
+report `oauth · anthropic`, the guest credential file to contain the exact
+`sk-ant-oat01-proxy-managed` and `sk-ant-ort01-proxy-managed` placeholders, and
+native `claude auth status` to report a first-party Claude subscription login.
+These checks emit only booleans; tokens and account details are not logged.
+The backend's descriptive mode field alone never establishes subscription use.
 
 ## Resources and images
 

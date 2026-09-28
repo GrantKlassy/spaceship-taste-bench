@@ -2,7 +2,7 @@
 
 ## Docker pilot variant
 
-`mode = "docker-pilot"` selects `single-attempt-docker-pilot-v1` for Codex.
+`mode = "docker-pilot"` selects `single-attempt-docker-pilot-v1` for Codex or Claude.
 Pilot metadata records the mode and accepted limitations; `isolation_verified`
 remains false. Docker-managed MCP/credential services, generated agent
 configuration, unverified subscription refresh/exhaustive network coverage, and
@@ -10,6 +10,8 @@ unbounded host snapshot/cache growth do not block this variant. Guest resources,
 image identities, mount/socket checks, explicit network rules, exact prompt
 delivery, immutable exports and cleanup still apply. Replay must use the same
 mode and does not claim the strict credential-free service boundary.
+Generation records the selected agent's observed Docker network defaults plus
+crates.io. Codex's existing accepted-limitations records remain unchanged.
 See [PILOT.md](docs/PILOT.md) for the executable workflow.
 
 The isolation and certification requirements below describe strict mode. The

@@ -112,24 +112,20 @@ impl ExecutionMode {
             Self::DockerPilot => "single-attempt-docker-pilot-v1",
         }
     }
-    pub fn limitations(self) -> Vec<String> {
+    pub fn limitations(self, agent: Agent) -> Vec<String> {
         if !self.is_pilot() {
             return Vec::new();
         }
         [
             "Docker-managed MCP gateway and provider/integration bindings remain accessible, including during replay.",
             "Docker-generated agent configuration is accepted; full configuration neutrality is not certified.",
-            "Generation uses Docker's Codex network defaults, including OpenAI/code/package hosts, plus crates.io.",
+            match agent {
+                Agent::Codex => "Generation uses Docker's Codex network defaults, including OpenAI/code/package hosts, plus crates.io.",
+                Agent::Claude => "Generation uses Docker's Claude network defaults, including Anthropic/Claude service hosts, plus crates.io.",
+            },
             "Subscription refresh and exhaustive network isolation are not certified; the pilot checks OAuth mode and its configured network rules.",
             "Guest disks and archive parsing are bounded; host-side snapshot/cache growth has no enforced quota.",
         ].into_iter().map(String::from).collect()
-    }
-    pub fn validate_agent(self, agent: Agent) -> Result<()> {
-        ensure!(
-            !self.is_pilot() || agent == Agent::Codex,
-            "Docker pilot generation currently supports Codex only"
-        );
-        Ok(())
     }
 }
 

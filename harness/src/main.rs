@@ -58,7 +58,7 @@ fn execute() -> Result<()> {
             );
             Ok(())
         }
-        Commands::Auth { agent } => backend.auth(agent),
+        Commands::Auth { agent } => backend.with_abort(process::signals()?).auth(agent),
         Commands::Run { agent, model, task } => {
             let state = state_dir(&repo)?;
             let abort = process::signals()?;
@@ -103,10 +103,7 @@ fn execute() -> Result<()> {
             for line in report.lines() {
                 println!("{line}");
             }
-            anyhow::ensure!(
-                report.ready,
-                "agent runtimes still fail required isolation/configuration checks"
-            );
+            anyhow::ensure!(report.ready, "agent runtime readiness checks failed");
             Ok(())
         }
     }

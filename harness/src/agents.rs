@@ -105,6 +105,8 @@ impl Agent {
             "wall_clock_budget": null, "token_budget": null, "cost_budget": null});
         if self == Self::Codex {
             settings["authentication"] = json!({"provider": "sandboxd", "billing": "chatgpt_subscription", "credential": "broker_sentinel", "requires_observed_oauth_mode": true});
+        } else {
+            settings["authentication"] = json!({"provider": "anthropic", "billing": "claude_subscription", "credential": "broker_sentinel", "requires_observed_oauth_mode": true});
         }
         settings
     }

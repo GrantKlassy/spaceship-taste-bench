@@ -50,8 +50,12 @@ impl Sandbox for Fake {
         let mut cmd = Command::new("sh");
         let text = if args == ["codex", "--version"] {
             "printf 'codex-cli 0.155.1\\n'"
+        } else if args == ["claude", "--version"] {
+            "printf '2.1.278 (Claude Code)\\n'"
         } else if args.first().map(String::as_str) == Some("git") {
             "true"
+        } else if args.first().map(String::as_str) == Some("claude") {
+            "cat >/dev/null; printf '%s\\n' '{\"type\":\"system\",\"subtype\":\"init\",\"model\":\"claude-exact-model\"}' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'"
         } else {
             "cat >/dev/null; printf '%s\\n' '{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'"
         };
@@ -151,7 +155,10 @@ fn pilot_archives_accepted_limits_without_claiming_strict_isolation() {
     let (dir, run) = bench::protocol::load_run(repo.path(), &id).unwrap();
     assert_eq!(run.mode, config.mode);
     assert_eq!(run.protocol_version, "single-attempt-docker-pilot-v1");
-    assert_eq!(run.accepted_limitations, config.mode.limitations());
+    assert_eq!(
+        run.accepted_limitations,
+        config.mode.limitations(Agent::Codex)
+    );
     assert!(!run.environment.isolation_verified);
     assert_eq!(run.outcome.completion, Completion::Normal);
     let replay: bench::replay::Replay =
@@ -175,33 +182,55 @@ fn strict_workflow_still_rejects_uncertified_backend_before_prompt_delivery() {
 }
 
 #[test]
-fn pilot_rejects_claude_before_allocating_an_attempt() {
+fn pilot_runs_claude_and_archives_its_model_subscription_and_network_limitations() {
     let (repo, state) = setup();
     let fake = Fake {
         calls: RefCell::new(vec![]),
-        fail: "",
+        fail: "uncertified",
     };
     let config = Config {
         mode: bench::config::ExecutionMode::DockerPilot,
         ..Config::default()
     };
-    assert!(
-        workflow::run(
-            &fake,
-            &config,
-            repo.path(),
-            state.path(),
-            workflow::Attempt {
-                agent: Agent::Claude,
-                model: "exact-model",
-                task_version: "spaceship-v1"
-            },
-            &AtomicBool::new(false)
-        )
-        .is_err()
+    let id = workflow::run(
+        &fake,
+        &config,
+        repo.path(),
+        state.path(),
+        workflow::Attempt {
+            agent: Agent::Claude,
+            model: "exact-model",
+            task_version: "spaceship-v1",
+        },
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    let (_, run) = bench::protocol::load_run(repo.path(), &id).unwrap();
+    assert_eq!(run.agent.name, Agent::Claude);
+    assert_eq!(run.agent.requested_model, "exact-model");
+    assert_eq!(
+        run.agent.reported_model.as_deref(),
+        Some("claude-exact-model")
     );
-    assert!(fake.calls.borrow().is_empty());
-    assert!(!repo.path().join("runs").exists());
+    assert_eq!(
+        run.agent.settings["authentication"]["billing"],
+        "claude_subscription"
+    );
+    assert_eq!(
+        run.accepted_limitations,
+        config.mode.limitations(Agent::Claude)
+    );
+    assert!(!run.environment.isolation_verified);
+    assert_eq!(run.outcome.completion, Completion::Normal);
+    assert_eq!(run.cleanup, ArtifactStatus::Complete);
+    assert_eq!(
+        fake.calls
+            .borrow()
+            .iter()
+            .filter(|c| *c == "create")
+            .count(),
+        1
+    );
 }
 #[test]
 fn normal_agent_completion_and_broken_game_are_separate() {

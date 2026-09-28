@@ -2,7 +2,7 @@
 
 A chronological showcase of individual coding-agent attempts. Each agent gets the same frozen prompt, creates a Rust terminal spaceship game, and leaves an unedited submission. A person plays it and writes a subjective review. There are no scores, evaluator models, rankings, repeated-trial machinery, or generated reviews.
 
-**Status: the Codex pilot passed a real smoke request using requested model `gpt-6-astra`, followed by export, locked dependency packaging and offline replay.** Subscription authentication works on this host. The pilot records the accepted gateway/configuration/storage limitations; strict attempts remain blocked by certification requirements. Docker Sandboxes `sbx` 0.45.0 is the sole backend. See the [pilot workflow](docs/PILOT.md) and [verification status](docs/VERIFICATION.md).
+**Status: Codex and Claude Code subscription pilots pass real smoke requests, source export, locked dependency packaging and offline replay.** Claude's smoke test requested and reported `claude-opus-5`; the frozen v2 image supports this Opus release. Run `bench auth claude` and `bench doctor --agent claude` before your first Claude attempt. The pilot records the accepted gateway/configuration/storage limitations; strict attempts remain blocked by certification requirements. Docker Sandboxes `sbx` 0.45.0 is the sole backend. See the [pilot workflow](docs/PILOT.md) and [verification status](docs/VERIFICATION.md).
 
 The development host is Ubuntu 24.04 under WSL2, x86-64, with Rust 1.97.0, Docker Engine 29.8.1, Buildx 0.37.1, `sbx` 0.45.0, KVM access, Docker sign-in and a deny-all baseline. The default environment is now `linux-rust-v2`: it preserves v1's packages and fixes Claude startup permissions and agent image flavor labels. The original v1 images remain preserved.
 
@@ -32,7 +32,7 @@ Only the harness is compiled on the host. Submissions and their Cargo build scri
 
 | Host | Status |
 | --- | --- |
-| Ubuntu 24.04+ amd64 with usable KVM | Enabled for the Codex Docker pilot; strict certification remains blocked |
+| Ubuntu 24.04+ amd64 with usable KVM | Enabled for the Docker pilot; strict certification remains blocked |
 | WSL2 Ubuntu amd64 | Linux-local creation/copy/export/PTY transport verified; supports the same pilot mode |
 | Fedora / other Linux | Rust CLI may build; backend support and this integration are unverified, so no official runs |
 | Apple silicon, macOS 14+ | Vendor-supported backend; this resolved amd64 environment and harness transport are not enabled there |
@@ -60,7 +60,7 @@ bench auth codex
 bench auth claude
 ```
 
-`auth codex` delegates to the documented host-side `sbx secret set openai --oauth` flow when that CLI is installed. `auth claude` currently fails with the documented subscription setup and the unresolved fresh-guest broker limitation. Neither copies your normal agent home or silently changes to API billing. The user has completed Codex broker OAuth on this host. [Credential details and alternatives](docs/SETUP.md#authentication).
+`auth codex` delegates to the documented host-side `sbx secret set openai --oauth` flow. `auth claude` opens Claude's browser login in a disposable mountless guest, destroys it, and checks subscription reuse in another fresh guest. Run authentication in your own terminal; its output is not logged. Neither command copies your normal agent home or silently changes to API billing. [Credential details and alternatives](docs/SETUP.md#authentication).
 
 ## First pilot
 
@@ -69,6 +69,10 @@ Follow [PILOT.md](docs/PILOT.md). Select `mode = "docker-pilot"` in ignored
 `bench doctor --agent codex`. The separate `smoke-v1` task can exercise a real request and replay
 without freezing your game prompt. Pilot records explicitly state their accepted
 limitations and never claim strict isolation certification.
+
+For an Opus attempt, use `bench auth claude`, then `bench doctor --agent claude`
+and `bench run --agent claude --model claude-opus-5 --task smoke-v1`.
+After the smoke test, omit `--task smoke-v1` to use the frozen spaceship prompt.
 
 ## Strict attempts, once certification is complete
 

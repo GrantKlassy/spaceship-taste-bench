@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "mode": "docker-pilot",
+  "preparation": "complete",
+  "reason": null,
+  "source_tree_sha256": "f2744f71eadde05af1efe197598b2e0129e57509dac5269c2862be20e77f9ee9",
+  "environment_image": "sha256:b9e17a2f78e910806ca20366d8611c304fc4ed333dcde20338c998203c77bcf5",
+  "local_bundle": "20260928T021517Z--claude--claude-opus-5--2299541c593542f9-23c0f8286f56299304aa86273563ce2bc8571b67c2b1a0e36115bd6aaff0f925.tar",
+  "bundle_sha256": "23c0f8286f56299304aa86273563ce2bc8571b67c2b1a0e36115bd6aaff0f925",
+  "bundle_bytes": 4970496,
+  "launch": "complete",
+  "launch_exit_code": 0,
+  "last_played_at": "2026-09-28T04:27:01.438919845Z"
+}

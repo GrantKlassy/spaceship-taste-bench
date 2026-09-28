@@ -1,0 +1,7 @@
+# Dependencies are vendored under vendor/, so `cargo build --locked` works with
+# no network access and no warm registry cache.
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"

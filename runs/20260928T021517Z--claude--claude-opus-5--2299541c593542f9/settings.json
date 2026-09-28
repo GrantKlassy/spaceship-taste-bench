@@ -1,0 +1,42 @@
+{
+  "accepted_limitations": [
+    "Docker-managed MCP gateway and provider/integration bindings remain accessible, including during replay.",
+    "Docker-generated agent configuration is accepted; full configuration neutrality is not certified.",
+    "Generation uses Docker's Claude network defaults, including Anthropic/Claude service hosts, plus crates.io.",
+    "Subscription refresh and exhaustive network isolation are not certified; the pilot checks OAuth mode and its configured network rules.",
+    "Guest disks and archive parsing are bounded; host-side snapshot/cache growth has no enforced quota."
+  ],
+  "agent": {
+    "authentication": {
+      "billing": "claude_subscription",
+      "credential": "broker_sentinel",
+      "provider": "anthropic",
+      "requires_observed_oauth_mode": true
+    },
+    "cost_budget": null,
+    "external_mcp": "disabled",
+    "external_sandbox_required": true,
+    "harness_retries": 0,
+    "host_config": "not_copied",
+    "new_session": true,
+    "prompt_transport": "stdin_exact_bytes",
+    "provider_web_search": "disabled",
+    "resume": false,
+    "token_budget": null,
+    "wall_clock_budget": null
+  },
+  "backend": "sbx",
+  "environment": "linux-rust-v2",
+  "limits": {
+    "cpus": 4,
+    "disk_mib": 20480,
+    "export_bytes": 536870912,
+    "export_files": 10000,
+    "log_bytes": 268435456,
+    "memory_mib": 8192,
+    "replay_bytes": 1073741824,
+    "replay_files": 100000
+  },
+  "mode": "docker-pilot",
+  "schema_version": 1
+}

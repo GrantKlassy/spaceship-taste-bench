@@ -89,11 +89,50 @@ The local MCP registry and governance profile list were empty. The installed set
 
 The user authorized a labeled pilot using Docker's normal gateway-bearing microVM boundary. `mode = "docker-pilot"` now selects that separate protocol; strict mode still requires supported backend/governance enforcement and host-storage bounds. Pilot runs retain image/resource/mount/socket checks, exact prompt delivery, source preservation and guest cleanup. Generation uses the observed immutable Codex network defaults plus crates.io; packaging permits crates.io; playback uses guest deny-all while acknowledging Docker-managed services. No filesystem quota or global network policy was changed.
 
+## Claude pilot setup, 2026-09-27
+
+The pilot now selects separate observed network rules for Claude and Codex. Fresh
+Claude 2.1.278 guests passed the adapter parser/version, resource, socket, network
+and replacement-storage checks. Claude's immutable built-in rule contains seven
+Anthropic/Claude HTTPS destinations, listed in [PILOT.md](PILOT.md); generation
+adds only the two crates.io hosts. Effective policy checks also require the
+other provider's destinations to remain denied.
+
+`bench auth claude` now runs native `claude auth login --claudeai` in a disposable
+mountless guest. The browser sign-in prompt and cancellation cleanup were tested.
+Authentication output is inherited by the user's terminal, not retained by the
+harness. After login it destroys the guest and requires OAuth mode, exact broker
+access/refresh placeholders, no auth/provider overrides and native subscription
+status in a second guest. The native host Claude login is not copied.
+
+The user completed browser sign-in. Fresh-guest subscription reuse and
+`bench doctor --agent claude --json` now pass; Codex readiness still passes.
+Observed sbx 0.45.0 behavior: `SBX_CRED_ANTHROPIC_MODE` remains `none` even with
+valid broker placeholders. The harness pairs the backend's `oauth · anthropic`
+inspection field with the exact guest placeholders and native Claude subscription
+status instead. Long-lived token refresh remains unverified. Existing Codex
+accepted-limitations bytes and frozen environment images are preserved; both
+existing Codex archives passed metadata/source checksum checks with the updated harness.
+
+The real smoke run
+`20260928T021116Z--claude--claude-opus-5--bed93d4c6fd84ef9` requested and reported
+`claude-opus-5`, completed naturally, exported source and prepared locked
+dependencies. Fresh offline replay printed `bench smoke: 42` and exited 0 in a
+120×40 PTY. No submission source was repaired and no review was generated.
+
+The subsequent `spaceship-v1` attempt,
+`20260928T021517Z--claude--claude-opus-5--2299541c593542f9`, produced **Nebula Drift**.
+Opus 5 completed naturally in 54.0 minutes using the existing frozen prompt and
+v2 environment. Source export and locked dependency packaging completed. Fresh
+offline playback built and launched the game in a 124×69 PTY; quitting returned
+exit code 0 and removed the guest. The submitted source and manual review
+template remain unedited. No sandboxes remained after verification.
+
 ## Remaining strict-mode certification work
 
 1. **MCP gateway and credential scope.** `sbx inspect` still reports an MCP gateway and an attached `mcpgateway` service. Shell guests still receive unrelated provider/integration bindings. A previous fixed HTTP probe reached the gateway under explicit deny-all and received HTTP 400; no MCP tool was invoked. Docker documents that every sandbox starts a gateway, and MCP governance is separate from network policy. The installed local `policy deny` interface only supports networking. [MCP access policies](https://docs.docker.com/ai/sandboxes/governance/access-controls/mcp/) require organization governance; there is no local MCP preset. A supported removal mechanism or independently verified external denial is still needed. An empty server registry or an agent flag does not provide that isolation.
 2. **Actual agent runtime configuration.** Codex gets generated `.codex/config.toml` gateway settings; Claude gets generated `.claude` settings and gateway configuration. The effective neutral settings and broker state still require verification after backend service isolation is resolved. CLI help/version success does not establish which managed settings take effect. Claude's additional storage is now accounted for and passes separate live checks.
-3. **Provider subscription authentication and egress.** Codex host-broker OAuth, fresh-guest OAuth mode, placeholder credentials, absence of an API-key override and a real model request now pass. Long-lived token refresh, credential scoping and strict egress isolation still need certification. Claude's fresh-guest subscription reuse remains unverified and `bench auth claude` remains unavailable. The pilot uses the observed Docker Codex network defaults plus crates.io.
+3. **Provider subscription authentication and egress.** Codex host-broker OAuth, fresh-guest OAuth mode, placeholder credentials, absence of an API-key override and a real model request now pass. Claude sign-in and fresh-guest subscription checks also pass. Long-lived token refresh, credential scoping and strict egress isolation still need certification. The pilot uses the selected agent's observed Docker network defaults plus crates.io.
 4. **Host snapshot/cache growth.** Guest root disk limits and parser/extraction limits are verified. `sbx template save --output` can create backend storage/cache before the parser sees the file. Neither an output-size check nor a free-space check is an enforced host-side growth limit. The installed interface has no verified bounded export option. A supported backend limit or administrator-provided, verified filesystem quota is required; passwordless administrator access is unavailable on this host. No storage directories were moved and no filesystems or quotas were changed.
 5. **Remaining network coverage.** Explicit authorizer checks cover hostnames, host/metadata destinations, IPv4, IPv6, loopback/LAN and UDP decisions. Live HTTP probes cover normal proxy use and bypassing proxy environment variables. Under dependency policy, both proxy and direct requests fetch the real sparse index; the downloaded crate checksum matches that index. Denied direct hostnames can fail at DNS, while some raw host/metadata routes close/refuse connections. Those transport failures are recorded as observations, not proof that policy caused them. Complete controlled raw IPv4/IPv6, non-HTTP TCP, UDP/ICMP and redirect acceptance before claiming all paths are certified.
 
@@ -120,15 +159,16 @@ Raw administrative output remains in private state under bounded `backend/` dire
 
 ## Local results
 
-- Ordinary Rust suite: **77 passed**, seven opt-in tests ignored by default. Tests cover archived playback dimensions, terminal restoration, snapshot retention, recovery audit history without another model request, and safe exclusion of incremental-cache metadata.
+- Ordinary Rust suite: **79 passed**, seven opt-in tests ignored by default. Tests include Claude lifecycle/model/subscription metadata, rejection of API billing or missing broker evidence, separate provider network policies, archived playback dimensions, terminal restoration, snapshot retention and recovery without another model request.
 - Formatting and Clippy with `-D warnings`: passed.
 - Docker pilot `bench check-integration`: passed, including generation policy transitions, production package/playback verification, real registry download/vendoring, stopped source/package export, 120×40 PTY/Ctrl-C, fresh-VM frozen replay and guest cleanup. No model request or task allocation was used.
 - Fresh pilot Codex runtime: pinned CLI/adapter flags, resources, absent SSH socket, effective native network rules plus crates.io, OAuth mode and placeholder credentials all passed. `bench doctor --agent codex --json` reports `ready: true`. Managed configuration/services are recorded pilot warnings. The built-in Codex kit contributes an immutable grouped network allowance; the pilot preserves and validates those destinations, rather than attempting to remove that rule.
+- Fresh pilot Claude runtime and subscription checks: passed, including replacement storage; `bench doctor --agent claude --json` reports `ready: true`. The Opus 5 smoke and Nebula Drift attempts passed generation, immutable export, locked packaging and fresh offline playback.
 - Fresh v2 Claude/Codex startup, pinned versions, adapter flags, CPU/memory/disk limits and Claude volume freshness: passed. Full runtime checks still fail the configuration/service requirements above.
 - Real dependency vendoring, stopped source/package export and clean-VM frozen replay: passed. Integration still fails required host-service isolation.
 - Live cancellation: all four checks passed: provisioning, post-creation, snapshot export and the guest build phase.
 
-Only the harness, reviewed image preparation and trusted test drivers execute on the host. Fixture and generated-project Cargo commands execute inside microVMs. Three attempts are archived: the successful smoke task, the unrecoverable AFTERLIGHT export, and VESPER with audited export recovery and successful offline playback. All select `linux-rust-v2`; their prompt and task contract bytes are frozen.
+Only the harness, reviewed image preparation and trusted test drivers execute on the host. Fixture and generated-project Cargo commands execute inside microVMs. See `runs/` for the current archives. Existing attempts select `linux-rust-v2`; their prompt and task contract bytes are frozen.
 
 ## References
 

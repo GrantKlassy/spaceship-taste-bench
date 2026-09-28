@@ -1,6 +1,6 @@
 # Local setup
 
-The development machine has the required toolchain and images. **Codex subscription sign-in and a real pilot smoke test through offline replay now pass.** Follow [PILOT.md](PILOT.md) on another host. Strict attempts remain blocked by their backend isolation requirements. See [VERIFICATION.md](VERIFICATION.md) for the evidence and accepted pilot limitations.
+The development machine has the required toolchain and images. **Codex and Claude subscription sign-in and real pilot smoke tests through offline replay now pass.** The Claude smoke requested and reported `claude-opus-5`. Follow [PILOT.md](PILOT.md) on another host. Strict attempts remain blocked by their backend isolation requirements. See [VERIFICATION.md](VERIFICATION.md) for the evidence and accepted pilot limitations.
 
 ## Current machine
 
@@ -89,9 +89,20 @@ Native `codex login` / `codex login --device-auth` are supported standalone flow
 
 ### Claude Code
 
-`bench auth claude` currently reports the unresolved integration. Docker's supported subscription flow is `/login` in an interactive Claude sandbox when no API key is set. Native `claude auth login --claudeai` is also present in installed help. Secure broker reuse in a different fresh mountless guest has not been demonstrated.
+Run `bench auth claude` in your terminal. It creates a disposable mountless guest
+from the pinned Claude image and runs `claude auth login --claudeai`; follow the
+browser link to sign in with your Claude subscription. It makes no model request
+and does not log authentication input or output. The login guest is destroyed,
+then a second fresh guest must report OAuth mode, broker placeholder tokens and
+a native Claude subscription login. No host or guest agent home is copied.
 
-Once host-service isolation can be established, observe subscription login in a disposable authentication-only guest, inspect non-secret scope and network evidence, verify refresh in another new guest, and destroy the authentication guest. Do not bake its writable filesystem into an image or copy its agent home into an attempt.
+An existing Anthropic API-key broker entry blocks this flow because Docker gives
+API keys precedence. The harness never removes that entry automatically. Local
+`sbx` 0.45.0 supports `secret set --oauth` only for OpenAI, so Claude uses the
+native login inside its guest instead. After authentication, run
+`bench doctor --agent claude`, then the smoke task in [PILOT.md](PILOT.md) before
+your Opus spaceship attempt. Long-lived refresh remains unverified; a successful
+auth-status check alone does not prove account entitlement or a model response.
 
 Docker also documents `sbx secret set anthropic` and `sbx secret set openai` for API keys. These are separately billed alternatives, not automatically enabled by this release. They do not solve the MCP/credential-isolation failures. Add an explicit billing mode only if subscription reuse cannot work securely and the user chooses that alternative.
 
@@ -102,11 +113,18 @@ References: [Docker credential handling](https://docs.docker.com/ai/sandboxes/co
 These work now without an agent account or model call:
 
 ```sh
-bench doctor
-bench check-integration
+bench --mode strict doctor
+bench --mode strict check-integration
 ```
 
-Both currently return 1 with the documented isolation failures. `bench doctor --agent codex --json` provides structured readiness checks; `bench check-runtimes` probes both agent runtimes, or use `--agent claude`/`--agent codex` to select one. The diagnostic continues with fixed trusted sentinels and a Rust fixture with the exact `itoa` 1.0.15 dependency to report which independent transport checks work. Its successful checks do not authorize official submissions.
+Both strict commands currently return 1 with the documented isolation failures.
+Pilot readiness passes for both authenticated agents on this host. Use
+`bench doctor --agent claude --json` or `--agent codex` for structured readiness;
+`bench check-runtimes --agent claude` or `--agent codex` checks one runtime.
+Without an agent selection, runtime checks cover both in strict mode and default
+to Codex in pilot mode. The integration diagnostic uses fixed trusted sentinels
+and a Rust fixture with the exact `itoa` 1.0.15 dependency. Passing pilot checks
+does not certify strict isolation.
 
 Remaining requirements are a supported way to disable the automatic MCP gateway and unrelated credential bindings, bounded backend snapshot/cache creation, verified provider subscription/egress behavior, and completion of the remaining network/runtime acceptance matrix. No verified installation or configuration command currently satisfies the whole contract. Do not remove `Sbx::evidence_gate` as a workaround. SSH forwarding is now disabled on this machine, but this does not remove MCP. Harness commands still do not change global settings or policy automatically.
 

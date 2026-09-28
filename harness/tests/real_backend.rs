@@ -81,7 +81,7 @@ fn real_vendored_terminal_fixture_export() {
     .unwrap();
     let run: bench::protocol::Run = serde_json::from_value(serde_json::json!({
         "schema_version": 1, "protocol_version": config.mode.protocol(),
-        "mode": config.mode, "accepted_limitations": config.mode.limitations(),
+        "mode": config.mode, "accepted_limitations": config.mode.limitations(bench::agents::Agent::Codex),
         "run_id": format!("fixture-{}", uuid::Uuid::new_v4().simple()),
         "task_version": "fixture", "prompt_sha256": "unused", "task_sha256": "unused", "input_sha256": {},
         "harness": {"commit": null,"dirty":null},

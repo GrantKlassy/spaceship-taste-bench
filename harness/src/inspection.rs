@@ -27,8 +27,8 @@ pub(crate) struct Inspect {
     daemon_version: String,
     // Built-in provider runtimes add this descriptive field. It is not proof
     // of authentication or subscription billing.
-    #[serde(rename = "auth_mode", default)]
-    _auth_mode: Option<String>,
+    #[serde(default)]
+    pub auth_mode: Option<String>,
     // Known descriptive fields. They convey no isolation proof.
     #[serde(rename = "uptime", default)]
     _uptime: Option<String>,
@@ -116,6 +116,31 @@ impl CodexBroker {
         ensure!(
             self.placeholder_auth && self.no_api_key_override,
             "Codex broker credentials are not the expected placeholders, or an API-key override is present"
+        );
+        Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ClaudeBroker {
+    placeholder_auth: bool,
+    subscription_login: bool,
+    no_api_key_override: bool,
+}
+impl ClaudeBroker {
+    pub fn validate_subscription(&self, backend_mode: Option<&str>) -> Result<()> {
+        ensure!(
+            backend_mode == Some("oauth · anthropic"),
+            "Claude requires the backend's OAuth subscription mode; run bench auth claude and create a fresh guest. An API-key override must be removed separately."
+        );
+        ensure!(
+            self.placeholder_auth && self.no_api_key_override,
+            "Claude broker credentials are not the expected placeholders, or an authentication/provider override is present"
+        );
+        ensure!(
+            self.subscription_login,
+            "Claude Code does not report a Claude subscription login; run bench auth claude"
         );
         Ok(())
     }
@@ -574,6 +599,49 @@ mod tests {
             );
         }
         assert!(serde_json::from_str::<CodexBroker>(r#"{"mode":"oauth"}"#).is_err());
+    }
+    #[test]
+    fn claude_subscription_rejects_api_billing_real_tokens_and_missing_evidence() {
+        let accepted = serde_json::json!({
+            "placeholder_auth": true,
+            "subscription_login": true, "no_api_key_override": true,
+        });
+        serde_json::from_value::<ClaudeBroker>(accepted.clone())
+            .unwrap()
+            .validate_subscription(Some("oauth · anthropic"))
+            .unwrap();
+        for mode in [
+            None,
+            Some("none"),
+            Some("apikey · anthropic"),
+            Some("oauth · openai"),
+            Some("oauth"),
+            Some(""),
+        ] {
+            assert!(
+                serde_json::from_value::<ClaudeBroker>(accepted.clone())
+                    .unwrap()
+                    .validate_subscription(mode)
+                    .is_err()
+            );
+        }
+        for key in [
+            "placeholder_auth",
+            "subscription_login",
+            "no_api_key_override",
+        ] {
+            let mut rejected = accepted.clone();
+            rejected[key] = false.into();
+            assert!(
+                serde_json::from_value::<ClaudeBroker>(rejected)
+                    .unwrap()
+                    .validate_subscription(Some("oauth · anthropic"))
+                    .is_err()
+            );
+            let mut missing = accepted.clone();
+            missing.as_object_mut().unwrap().remove(key);
+            assert!(serde_json::from_value::<ClaudeBroker>(missing).is_err());
+        }
     }
     fn inspect() -> Inspect {
         serde_json::from_str(include_str!("../tests/fixtures/sbx/inspect.json")).unwrap()
