@@ -66,7 +66,7 @@ def main():
     args = parser.parse_args()
     lock = json.loads(LOCK.read_text())
     if any(lock["images"].values()) and not args.rebuild:
-        raise SystemExit("Images already resolved. Load build/*.tar to reuse them, or pass --rebuild to update this environment in place.")
+        raise SystemExit("Images already resolved. Reuse matching installed templates or load preserved build/*.tar archives (not included in a clone); see docs/SETUP.md. Pass --rebuild to update this environment in place.")
     if not shutil.which("docker") or not shutil.which("sbx"):
         raise SystemExit("Install Docker image-building tools and local sbx 0.45.0 first. See docs/SETUP.md. Nothing installed automatically.")
     if not command("sbx", "version", capture=True).startswith("sbx version: v0.45.0 "):
@@ -82,7 +82,7 @@ def main():
         resolved = {}
         base_layers = None
         for kind in ("base", "claude", "codex"):
-            tag = f"spaceship-bench-{kind}:{lock['environment']}"
+            tag = f"terminal-game-taste-bench-{kind}:{lock['environment']}"
             build_args = ["docker", "build", "--tag", tag, "--file", str(Path(context) / f"{kind}.Dockerfile")]
             if kind != "base":
                 pin = lock["agents"][kind]

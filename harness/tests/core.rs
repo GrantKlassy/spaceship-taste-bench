@@ -1,13 +1,13 @@
-use bench::{
+use chrono::TimeZone;
+use clap::Parser;
+use std::{fs, io::Cursor, path::Path};
+use terminal_game_taste_bench::{
     agents::{Agent, Completion, Events},
     archive,
     config::{Cli, Config, Limits},
     protocol::{self, RunStore, Task},
     replay,
 };
-use chrono::TimeZone;
-use clap::Parser;
-use std::{fs, io::Cursor, path::Path};
 
 fn repo() -> tempfile::TempDir {
     let tmp = tempfile::tempdir().unwrap();
@@ -46,28 +46,115 @@ fn tar(entries: &[(&str, u8, &[u8])]) -> Vec<u8> {
     out.into_inner().unwrap()
 }
 #[test]
-fn arguments_require_model_and_reject_traversal_or_shell_syntax() {
-    assert!(Cli::try_parse_from(["bench", "run", "--agent", "codex"]).is_err());
+fn arguments_require_model_and_task_and_reject_traversal_or_shell_syntax() {
+    assert!(Cli::try_parse_from(["bench", "run", "--agent", "codex", "--task", "smoke"]).is_err());
+    assert!(
+        Cli::try_parse_from(["bench", "run", "--agent", "codex", "--model", "exact-model"])
+            .is_err()
+    );
     for model in ["", "--foo", "x;touch /tmp/x", "$(id)", "a\nsecret"] {
         assert!(
-            Cli::try_parse_from(["bench", "run", "--agent", "codex", "--model", model]).is_err()
+            Cli::try_parse_from([
+                "bench", "run", "--agent", "codex", "--model", model, "--task", "smoke"
+            ])
+            .is_err()
         );
     }
     for id in ["../run", "/absolute", "a/b", "a\\b", "-x", "foo\x1b[0m"] {
         assert!(Cli::try_parse_from(["bench", "play", id]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "bench",
+                "run",
+                "--agent",
+                "codex",
+                "--model",
+                "exact-model",
+                "--task",
+                id
+            ])
+            .is_err()
+        );
     }
-    let cli = Cli::try_parse_from([
-        "bench",
-        "run",
-        "--agent",
-        "claude",
-        "--model",
-        "claude-exact-1",
-    ])
-    .unwrap();
-    assert!(
-        matches!(cli.command, bench::config::Commands::Run { task, .. } if task == "spaceship")
-    );
+    for selected in ["spaceship", "smoke", "maze"] {
+        let cli = Cli::try_parse_from([
+            "bench",
+            "run",
+            "--agent",
+            "claude",
+            "--model",
+            "claude-exact-1",
+            "--task",
+            selected,
+        ])
+        .unwrap();
+        assert!(
+            matches!(cli.command, terminal_game_taste_bench::config::Commands::Run { task, .. } if task == selected)
+        );
+    }
+}
+#[test]
+fn private_state_uses_project_paths_and_reopens_existing_data() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
+
+    // Run in separate processes so environment overrides cannot race other tests.
+    // This empty repository stops at the missing environment lock, before sbx.
+    for source in ["HOME", "XDG_STATE_HOME", "BENCH_STATE_DIR"] {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        fs::create_dir(&repo).unwrap();
+        let home = root.path().join("home");
+        let xdg = root.path().join("xdg");
+        let custom = root.path().join("custom");
+        let state = match source {
+            "HOME" => home.join(".local/state/terminal-game-taste-bench"),
+            "XDG_STATE_HOME" => xdg.join("terminal-game-taste-bench"),
+            _ => custom.clone(),
+        };
+        let invoke = || {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_bench"));
+            command
+                .env_remove("BENCH_STATE_DIR")
+                .env_remove("XDG_STATE_HOME")
+                .env("HOME", &home);
+            if source != "HOME" {
+                command.env("XDG_STATE_HOME", &xdg);
+            }
+            if source == "BENCH_STATE_DIR" {
+                command.env("BENCH_STATE_DIR", &custom);
+            }
+            command
+                .arg("--repo")
+                .arg(&repo)
+                .args([
+                    "run", "--agent", "codex", "--model", "fixture", "--task", "smoke",
+                ])
+                .output()
+                .unwrap()
+        };
+        let first = invoke();
+        assert!(!first.status.success());
+        assert_eq!(
+            fs::read(state.join(".bench-state-v1")).unwrap(),
+            b"terminal-game-taste-bench state v1\n"
+        );
+        assert_eq!(
+            fs::metadata(&state).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        let bundle = state.join("bundles/preserved.tar");
+        fs::create_dir(bundle.parent().unwrap()).unwrap();
+        fs::write(&bundle, b"preserved fixture").unwrap();
+        let second = invoke();
+        assert_eq!(first.stderr, second.stderr);
+        assert_eq!(fs::read(bundle).unwrap(), b"preserved fixture");
+        fs::write(state.join(".bench-state-v1"), b"unrelated state\n").unwrap();
+        let rejected = invoke();
+        assert!(
+            String::from_utf8_lossy(&rejected.stderr).contains("invalid state directory marker")
+        );
+    }
 }
 #[test]
 fn configuration_rejects_unknown_or_unsafe_settings() {
@@ -99,7 +186,7 @@ fn configuration_rejects_unknown_or_unsafe_settings() {
 
 #[test]
 fn pilot_is_explicit_and_cannot_be_confused_with_strict_mode() {
-    use bench::config::ExecutionMode;
+    use terminal_game_taste_bench::config::ExecutionMode;
     assert_eq!(Config::default().mode, ExecutionMode::Strict);
     let pilot: Config = toml::from_str("mode = 'docker-pilot'").unwrap();
     assert_eq!(pilot.mode, ExecutionMode::DockerPilot);
@@ -150,11 +237,11 @@ fn model_slugs_collapse_separators_and_stay_bounded() {
         ("A".repeat(200), "a".repeat(64)),
         (format!("{}-b", "a".repeat(63)), "a".repeat(63)),
     ] {
-        assert!(bench::config::validate_model(&model).is_ok());
+        assert!(terminal_game_taste_bench::config::validate_model(&model).is_ok());
         let id = protocol::run_id(Agent::Codex, &model, now);
         assert_eq!(id, format!("codex-{slug}-2026-09-24"));
         assert!(!id.contains("--"));
-        assert!(bench::config::parse_component(&id).is_ok());
+        assert!(terminal_game_taste_bench::config::parse_component(&id).is_ok());
     }
 }
 #[test]
@@ -605,8 +692,10 @@ fn canonical_tasks_select_the_current_environment() {
         .map(|entry| entry.unwrap().file_name())
         .collect();
     names.sort();
-    assert_eq!(names, ["smoke", "spaceship"]);
-    for name in ["smoke", "spaceship"] {
+    assert!(names.contains(&"smoke".into()));
+    assert!(names.contains(&"spaceship".into()));
+    for name in &names {
+        let name = name.to_str().unwrap();
         let task = Task::load(root, name).unwrap();
         assert_eq!(task.contract.name, name);
         assert_eq!(task.contract.environment, Config::default().environment);

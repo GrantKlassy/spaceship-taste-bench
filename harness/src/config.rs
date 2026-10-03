@@ -11,7 +11,7 @@ use std::{
 #[command(
     name = "bench",
     version,
-    about = "Preserve one autonomous coding-agent attempt"
+    about = "Evaluate coding agents' terminal games with preserved attempts and human reviews"
 )]
 pub struct Cli {
     #[arg(long, global = true, default_value = ".")]
@@ -44,7 +44,8 @@ pub enum Commands {
         agent: Agent,
         #[arg(long, value_parser = validate_model)]
         model: String,
-        #[arg(long, default_value = "spaceship", value_parser = parse_component)]
+        /// Task directory name under tasks/ (for example, spaceship or smoke).
+        #[arg(long, value_parser = parse_component)]
         task: String,
     },
     /// Build and play an immutable submission in an offline guest.
@@ -244,13 +245,13 @@ pub fn state_dir(repo: &Path) -> Result<PathBuf> {
     let path = if let Some(p) = std::env::var_os("BENCH_STATE_DIR") {
         PathBuf::from(p)
     } else if let Some(p) = std::env::var_os("XDG_STATE_HOME") {
-        PathBuf::from(p).join("spaceship-taste-bench")
+        PathBuf::from(p).join("terminal-game-taste-bench")
     } else {
         PathBuf::from(
             std::env::var_os("HOME")
                 .context("set BENCH_STATE_DIR to a private directory outside the checkout")?,
         )
-        .join(".local/state/spaceship-taste-bench")
+        .join(".local/state/terminal-game-taste-bench")
     };
     ensure!(path.is_absolute(), "state directory must be absolute");
     // Check the nearest existing ancestor before creating anything.
@@ -279,11 +280,11 @@ pub fn state_dir(repo: &Path) -> Result<PathBuf> {
     let marker = path.join(".bench-state-v1");
     if marker.exists() {
         ensure!(
-            crate::archive::read_regular(&marker, 64)? == b"spaceship-taste-bench state v1\n",
+            crate::archive::read_regular(&marker, 64)? == b"terminal-game-taste-bench state v1\n",
             "invalid state directory marker"
         );
     } else {
-        fs::write(marker, b"spaceship-taste-bench state v1\n")?;
+        fs::write(marker, b"terminal-game-taste-bench state v1\n")?;
     }
     Ok(path)
 }

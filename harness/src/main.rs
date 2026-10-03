@@ -1,12 +1,12 @@
 use anyhow::{Context, Result};
-use bench::{
+use clap::Parser;
+use terminal_game_taste_bench::{
     archive,
     config::{Cli, Commands, Config, state_dir},
     process, protocol, replay,
     sandbox::Sbx,
     workflow,
 };
-use clap::Parser;
 
 fn main() {
     if let Err(error) = execute() {
@@ -98,7 +98,9 @@ fn execute() -> Result<()> {
             let state = state_dir(&repo)?;
             let abort = process::signals()?;
             let backend = Sbx::new(&repo, &config)?.with_abort(abort.clone());
-            bench::sandbox::integration_check_abort(&backend, &repo, &state, &abort)
+            terminal_game_taste_bench::sandbox::integration_check_abort(
+                &backend, &repo, &state, &abort,
+            )
         }
         Commands::CheckRuntimes { agent } => {
             let abort = process::signals()?;

@@ -35,7 +35,7 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual(sorted(path.name for path in Path(args[-1]).iterdir()),
                              ["base.Dockerfile", "claude.Dockerfile", "codex.Dockerfile"])
         elif args[:3] == ("docker", "image", "inspect"):
-            kind = args[3].split(":")[0].removeprefix("spaceship-bench-")
+            kind = args[3].split(":")[0].removeprefix("terminal-game-taste-bench-")
             layers = ["base-layer"] + ([] if kind == "base" else [kind + "-layer"])
             return json.dumps([{"Id": "sha256:" + {"base": "a", "claude": "b", "codex": "c"}[kind] * 64,
                                 "RootFS": {"Layers": layers}, "Architecture": "amd64"}])
@@ -63,7 +63,7 @@ class PreparationTests(unittest.TestCase):
         self.assertEqual([call.args[0] for call in verify.call_args_list], ["base", "claude", "codex"])
         self.assertEqual(len(self.builds), 3)
         for build, kind in zip(self.builds[1:], ("claude", "codex")):
-            self.assertIn("BASE_IMAGE=spaceship-bench-base:linux-rust", build)
+            self.assertIn("BASE_IMAGE=terminal-game-taste-bench-base:linux-rust", build)
             self.assertIn(f"AGENT_VERSION={self.lock['agents'][kind]['version']}", build)
             self.assertIn(f"AGENT_NPM_INTEGRITY={self.lock['agents'][kind]['npm_integrity']}", build)
         resolved = json.loads(self.lock_path.read_text())

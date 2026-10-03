@@ -1,5 +1,9 @@
 # Security and trust boundaries
 
+These boundaries apply to every task in terminal-game-taste-bench, including the
+`spaceship` game and the `smoke` workflow check. A task's theme does not change its
+execution or preservation rules.
+
 **Strict generation and playback remain blocked by their isolation requirements.** The separately labeled [Docker pilot](docs/PILOT.md) uses the user's accepted existing sandbox boundary. It allows Docker-managed MCP/credential services and generated agent configuration, and accepts unbounded host snapshot/cache growth. These limitations are archived on every pilot; `isolation_verified` stays false. Pilot generation uses Docker's pinned network defaults for the selected agent plus crates.io. Packaging permits only crates.io and playback uses deny-all, but these guest rules do not isolate Docker-managed services. The strict guarantees below do not apply to those accepted exceptions. Read [the evidence ledger](docs/VERIFICATION.md).
 
 ## Threat model
@@ -36,7 +40,7 @@ CPU/memory allocations and Docker's documented [`DOCKER_SANDBOXES_ROOT_SIZE`](ht
 
 **Host-side snapshot/cache growth is not yet bounded by a verified backend capability.** Guest disk accounting and parser limits cannot prevent backend disk consumption during snapshot creation. Production remains gated for this reason too.
 
-Image base/index/platform digests and agent package versions were resolved from registries. Trusted preparation has now built and loaded all three amd64 images, recorded their actual Docker identities and checked that both agent images inherit identical base layers. Native package versions are recorded inside the base image. No fabricated digest or `latest` image is used. Base packages are resolved during first preparation, then their versions and complete image identity are frozen; rebuilding is refused for an existing resolved version. The initial package resolution is not claimed reproducible. No benchmark prompt or starter solution is baked in. Image build success does not establish microVM isolation.
+Image base/index/platform digests and agent package versions were resolved from registries. Trusted preparation has now built and loaded all three amd64 images, recorded their actual Docker identities and checked that both agent images inherit identical base layers. Native package versions are recorded inside the base image. No fabricated digest or `latest` image is used. Base packages are resolved during first preparation, then their versions and complete image identity are frozen. Rebuilding requires explicit `--rebuild` and updates the same environment lock only after all candidate runtimes pass; archived attempts retain their original image identities. The initial package resolution is not claimed reproducible. No benchmark prompt or starter solution is baked in. Image build success does not establish microVM isolation.
 
 ## Export and filesystem handling
 

@@ -1,8 +1,8 @@
-use bench::archive;
 use std::{
     fs,
     io::{Cursor, Write},
 };
+use terminal_game_taste_bench::archive;
 
 fn tar(entries: &[(&str, u8, &[u8])]) -> Vec<u8> {
     let mut out = tar::Builder::new(Vec::new());

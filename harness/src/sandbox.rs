@@ -776,7 +776,7 @@ impl Sbx {
             "invalid resolved image ID"
         );
         ensure!(
-            image.reference.starts_with("spaceship-bench-")
+            image.reference.starts_with("terminal-game-taste-bench-")
                 && !image.reference.chars().any(char::is_whitespace),
             "invalid local image reference"
         );
@@ -1206,7 +1206,7 @@ impl Sandbox for Sbx {
             !image.exists(),
             "refusing to overwrite a retained stopped snapshot"
         );
-        let tag = format!("spaceship-bench-export:{name}");
+        let tag = format!("terminal-game-taste-bench-export:{name}");
         let mut cmd = self.command(&["template", "save", name, &tag, "--output"]);
         cmd.arg(&image);
         // Snapshot RPCs also settle before template/guest cleanup. Cancellation
@@ -1761,10 +1761,10 @@ mod tests {
     #[test]
     fn doctor_checks_actual_image_identity_not_only_a_tag_or_lock_entry() {
         let image = Image {
-            reference: "spaceship-bench-base:linux-rust".into(),
+            reference: "terminal-game-taste-bench-base:linux-rust".into(),
             image_id: format!("sha256:{}", "ab".repeat(32)),
         };
-        let data = json!({"images":[{"repository":"docker.io/library/spaceship-bench-base", "tag":"linux-rust", "id":"abababababab"}]});
+        let data = json!({"images":[{"repository":"docker.io/library/terminal-game-taste-bench-base", "tag":"linux-rust", "id":"abababababab"}]});
         serde_json::from_value::<Templates>(data.clone())
             .unwrap()
             .contains(&image)

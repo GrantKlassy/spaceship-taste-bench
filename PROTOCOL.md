@@ -1,5 +1,10 @@
 # Attempt protocol: single-attempt-v1
 
+Terminal game taste bench evaluates coding agents across terminal-game tasks.
+Each attempt selects one task explicitly with `--task <task-name>`. The current
+`spaceship` game and `smoke` workflow check share this protocol; task prompts and
+terminal dimensions come from their individual contracts.
+
 ## Docker pilot variant
 
 `mode = "docker-pilot"` selects `single-attempt-docker-pilot-v1` for Codex or Claude.

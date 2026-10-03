@@ -1,8 +1,4 @@
 //! Trusted shell fixtures test transport, not agent or sandbox isolation.
-use bench::{
-    agents::{Agent, Completion},
-    process,
-};
 use std::{
     fs,
     process::Command,
@@ -11,6 +7,10 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
+};
+use terminal_game_taste_bench::{
+    agents::{Agent, Completion},
+    process,
 };
 #[test]
 fn prompt_is_written_once_byte_for_byte_and_raw_controls_stay_in_private_logs() {

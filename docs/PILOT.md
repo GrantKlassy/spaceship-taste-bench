@@ -41,7 +41,8 @@ Account entitlement, token refresh and a real
 model response are only established when exercised; doctor makes no model request.
 OpenAI distinguishes [subscription login from API-key billing](https://learn.chatgpt.com/docs/auth).
 
-With an exact model ID, use the separate small smoke task before the game:
+With an exact model ID, use the separate small smoke task before a game task.
+Every run requires an explicit `--task <task-name>` selection:
 
 A run reserves that agent/model's UTC date across all tasks. Schedule the game
 on a later UTC date than its smoke test.
@@ -57,7 +58,7 @@ For Opus 5.5 with the `linux-rust` image:
 bench run --agent claude --model claude-opus-5-5 --task smoke
 bench play '<smoke-run-id>'
 # On a later UTC date, run spaceship with the game prompt:
-bench run --agent claude --model claude-opus-5-5
+bench run --agent claude --model claude-opus-5-5 --task spaceship
 ```
 
 Use the full model ID from [Claude's model configuration](https://code.claude.com/docs/en/model-config),
@@ -67,8 +68,10 @@ stream's reported model is archived separately. The harness does not set a fallb
 
 Smoke playback needs a 120-column by 40-row terminal. A successful smoke test generates
 and packages a tiny Rust program, then prints `bench smoke: 42` during playback.
-Each attempt archives its own inputs. Edit `tasks/spaceship/prompt.md` and its contract in place when changing future game attempts. To run the same game prompt with Codex, use
-`bench run --agent codex --model '<exact-model-id>'`.
+Each attempt archives its own inputs from `tasks/<task-name>/prompt.md` and
+`task.toml`. Update each task in place when changing future attempts. For example,
+to run the spaceship task with Codex, use
+`bench run --agent codex --model '<exact-model-id>' --task spaceship`.
 The spaceship task uses 124 columns by 69 rows.
 Playback always uses each run's archived contract dimensions.
 

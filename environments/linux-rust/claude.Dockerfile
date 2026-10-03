@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=spaceship-bench-base:linux-rust
+ARG BASE_IMAGE=terminal-game-taste-bench-base:linux-rust
 FROM ${BASE_IMAGE}
 ARG AGENT_VERSION=2.1.280
 ARG AGENT_NPM_INTEGRITY

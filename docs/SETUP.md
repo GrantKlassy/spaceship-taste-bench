@@ -38,7 +38,7 @@ Install the harness from the repository root:
 
 ```sh
 rustup toolchain install 1.97.0 --profile minimal --component rustfmt --component clippy
-cargo +1.97.0 install --path harness --locked
+cargo +1.97.0 install --path harness --locked --force
 bench doctor
 ```
 
@@ -56,7 +56,24 @@ The script supplies only the three reviewed Dockerfiles as build context. The ba
 
 Base/index/platform digests and agent package pins were resolved from public registries. Native OS packages are resolved during the first trusted build; `/opt/bench/native-packages.tsv` records their exact versions. The lock records the complete built image identity for each image. Initial package resolution is not claimed reproducible. Docker 29's image IDs can identify OCI indexes rather than image configurations; the lock records actual returned identities.
 
-**This checkout is already resolved.** Its local image archives are in ignored `environments/linux-rust/build/`. To use those exact images on another compatible host, transfer the preserved archives outside Git and load them:
+**The environment lock is already resolved.** Docker images use
+`terminal-game-taste-bench-{base,claude,codex}:linux-rust` tags. A fresh clone
+contains the lock, but not the ignored archives in `environments/linux-rust/build/`.
+Inspect `docker image ls` and `sbx template ls` for existing images before building.
+When the images are already loaded in `sbx` with the lock's IDs, no preparation
+is needed. To save matching Docker images locally and load them into `sbx`:
+
+```sh
+mkdir -p environments/linux-rust/build
+for kind in base claude codex; do
+  docker image save --output "environments/linux-rust/build/$kind.tar" \
+    "terminal-game-taste-bench-$kind:linux-rust"
+  chmod 600 "environments/linux-rust/build/$kind.tar"
+done
+```
+
+Use these commands to load preserved archives, including after transferring them
+outside Git to another compatible host:
 
 ```sh
 sbx template load environments/linux-rust/build/base.tar
@@ -64,9 +81,17 @@ sbx template load environments/linux-rust/build/claude.tar
 sbx template load environments/linux-rust/build/codex.tar
 ```
 
-No image/artifact has been uploaded. For intentional updates, edit this environment and the reviewed CLI pins in place, then run `python3 environments/linux-rust/prepare.py --rebuild`. The script updates the same lock after all candidate runtimes pass. Keep any bundles needed by existing runs before rebuilding: playback and recovery use their archived locks and refuse different image identities. A new build is recorded as new input to future attempts, without creating another environment directory.
+No image/artifact has been uploaded. If neither matching images nor preserved archives are available, or for an intentional update, run `python3 environments/linux-rust/prepare.py --rebuild` with the reviewed Dockerfiles and CLI pins. The script updates the same lock after all candidate runtimes pass. Keep any bundles needed by existing runs before rebuilding: playback and recovery use their archived locks and refuse different image identities. A new build is recorded as new input to future attempts, without creating another environment directory.
 
-The default environment is `linux-rust` and the default task is `spaceship`. Playback and recovery select the environment archived with the run. Copy `bench.example.toml` to ignored `bench.local.toml` to adjust machine-protection limits. These are CPU, memory, disk, export/replay and log safety settings, never benchmark time/token/cost budgets. `disk_mib` covers the root disk plus writable runtime volumes. Claude reserves 4096 MiB for its five runtime volumes and requires at least 6144 MiB total; the default 20480 MiB gives it a 16384 MiB root disk. Codex and shell guests use the full allocation for their root disk.
+The default environment is `linux-rust`. Runs require an explicit task such as `--task spaceship` or `--task smoke`; each task has its own prompt and terminal contract. Playback and recovery select the environment archived with the run. Copy `bench.example.toml` to ignored `bench.local.toml` to adjust machine-protection limits. These are CPU, memory, disk, export/replay and log safety settings, never benchmark time/token/cost budgets. `disk_mib` covers the root disk plus writable runtime volumes. Claude reserves 4096 MiB for its five runtime volumes and requires at least 6144 MiB total; the default 20480 MiB gives it a 16384 MiB root disk. Codex and shell guests use the full allocation for their root disk.
+
+Private state lives at `$XDG_STATE_HOME/terminal-game-taste-bench`, falling back
+to `~/.local/state/terminal-game-taste-bench`. `BENCH_STATE_DIR` overrides the
+whole path. The directory must be dedicated to the benchmark and outside the
+checkout; its `.bench-state-v1` marker contains `terminal-game-taste-bench state v1`
+followed by a newline. Raw logs, retained snapshots and replay bundles stay there
+across clones. Existing run metadata and input snapshots must retain their exact
+bytes; bundle references are relative to this state directory.
 
 ## Authentication
 
@@ -101,7 +126,7 @@ API keys precedence. The harness never removes that entry automatically. Local
 `sbx` 0.45.0 supports `secret set --oauth` only for OpenAI, so Claude uses the
 native login inside its guest instead. After authentication, run
 `bench doctor --agent claude`, then the smoke task in [PILOT.md](PILOT.md) before
-your Opus spaceship attempt. Long-lived refresh remains unverified; a successful
+your selected terminal-game attempt. Long-lived refresh remains unverified; a successful
 auth-status check alone does not prove account entitlement or a model response.
 
 Docker also documents `sbx secret set anthropic` and `sbx secret set openai` for API keys. These are separately billed alternatives, not automatically enabled by this release. They do not solve the MCP/credential-isolation failures. Add an explicit billing mode only if subscription reuse cannot work securely and the user chooses that alternative.
@@ -133,8 +158,8 @@ After those requirements are implemented and verified, the intended user workflo
 ```sh
 bench auth claude
 bench auth codex
-bench run --agent claude --model '<exact-model-id>'
-bench run --agent codex --model '<exact-model-id>'
+bench run --agent claude --model '<exact-model-id>' --task '<task-name>'
+bench run --agent codex --model '<exact-model-id>' --task '<task-name>'
 bench play '<run-id>'
 ```
 

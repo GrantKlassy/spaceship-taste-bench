@@ -1,6 +1,8 @@
 //! Simulated control flow only: these tests make no claim about real VM isolation.
 use anyhow::{Result, bail};
-use bench::{
+use serde_json::json;
+use std::{cell::RefCell, fs, path::Path, process::Command, sync::atomic::AtomicBool};
+use terminal_game_taste_bench::{
     agents::{Agent, Completion},
     archive,
     config::Config,
@@ -8,8 +10,6 @@ use bench::{
     sandbox::{Guest, Role, Sandbox},
     workflow,
 };
-use serde_json::json;
-use std::{cell::RefCell, fs, path::Path, process::Command, sync::atomic::AtomicBool};
 
 struct Fake {
     calls: RefCell<Vec<String>>,
@@ -143,7 +143,7 @@ fn pilot_archives_accepted_limits_without_claiming_strict_isolation() {
         fail: "uncertified",
     };
     let config = Config {
-        mode: bench::config::ExecutionMode::DockerPilot,
+        mode: terminal_game_taste_bench::config::ExecutionMode::DockerPilot,
         ..Config::default()
     };
     let id = workflow::run(
@@ -159,7 +159,7 @@ fn pilot_archives_accepted_limits_without_claiming_strict_isolation() {
         &AtomicBool::new(false),
     )
     .unwrap();
-    let (dir, run) = bench::protocol::load_run(repo.path(), &id).unwrap();
+    let (dir, run) = terminal_game_taste_bench::protocol::load_run(repo.path(), &id).unwrap();
     assert_eq!(run.mode, config.mode);
     assert_eq!(run.protocol_version, "single-attempt-docker-pilot-v1");
     assert_eq!(
@@ -168,13 +168,13 @@ fn pilot_archives_accepted_limits_without_claiming_strict_isolation() {
     );
     assert!(!run.environment.isolation_verified);
     assert_eq!(run.outcome.completion, Completion::Normal);
-    let replay: bench::replay::Replay =
+    let replay: terminal_game_taste_bench::replay::Replay =
         serde_json::from_slice(&fs::read(dir.join("replay.json")).unwrap()).unwrap();
     assert_eq!(replay.mode, config.mode);
     let mut mislabeled = run;
-    mislabeled.protocol_version = bench::protocol::PROTOCOL.into();
-    bench::protocol::atomic_json(&dir.join("run.json"), &mislabeled).unwrap();
-    assert!(bench::protocol::load_run(repo.path(), &id).is_err());
+    mislabeled.protocol_version = terminal_game_taste_bench::protocol::PROTOCOL.into();
+    terminal_game_taste_bench::protocol::atomic_json(&dir.join("run.json"), &mislabeled).unwrap();
+    assert!(terminal_game_taste_bench::protocol::load_run(repo.path(), &id).is_err());
 }
 
 #[test]
@@ -198,7 +198,7 @@ fn pilot_runs_claude_and_archives_its_model_subscription_and_network_limitations
         fail: "uncertified",
     };
     let config = Config {
-        mode: bench::config::ExecutionMode::DockerPilot,
+        mode: terminal_game_taste_bench::config::ExecutionMode::DockerPilot,
         ..Config::default()
     };
     let id = workflow::run(
@@ -214,7 +214,7 @@ fn pilot_runs_claude_and_archives_its_model_subscription_and_network_limitations
         &AtomicBool::new(false),
     )
     .unwrap();
-    let (_, run) = bench::protocol::load_run(repo.path(), &id).unwrap();
+    let (_, run) = terminal_game_taste_bench::protocol::load_run(repo.path(), &id).unwrap();
     assert_eq!(run.agent.name, Agent::Claude);
     assert_eq!(run.agent.requested_model, "exact-model");
     assert_eq!(
@@ -250,7 +250,7 @@ fn normal_agent_completion_and_broken_game_are_separate() {
         fail: "",
     };
     let id = execute(&fake, repo.path(), state.path()).unwrap();
-    let (dir, run) = bench::protocol::load_run(repo.path(), &id).unwrap();
+    let (dir, run) = terminal_game_taste_bench::protocol::load_run(repo.path(), &id).unwrap();
     assert_eq!(run.outcome.completion, Completion::Normal);
     assert_eq!(run.export.status, ArtifactStatus::Complete);
     assert_eq!(run.replay_preparation, ArtifactStatus::Failed); // no Cargo.lock; no repairs
@@ -276,6 +276,67 @@ fn normal_agent_completion_and_broken_game_are_separate() {
     );
 }
 #[test]
+fn attempts_preserve_selected_tasks_without_a_spaceship_directory() {
+    for name in ["smoke", "maze"] {
+        let repo = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let task_dir = repo.path().join("tasks").join(name);
+        fs::create_dir_all(&task_dir).unwrap();
+        fs::create_dir(repo.path().join("templates")).unwrap();
+        fs::write(
+            repo.path().join("templates/review.md"),
+            include_bytes!("../../templates/review.md"),
+        )
+        .unwrap();
+        let mut contract: terminal_game_taste_bench::protocol::TaskContract =
+            toml::from_str(include_str!("../../tasks/smoke/task.toml")).unwrap();
+        let prompt = if name == "smoke" {
+            include_bytes!("../../tasks/smoke/prompt.md").as_slice()
+        } else {
+            contract.name = name.into();
+            contract.columns = 96;
+            contract.rows = 32;
+            b"Create a terminal maze game.\n".as_slice()
+        };
+        fs::write(
+            task_dir.join("task.toml"),
+            toml::to_string(&contract).unwrap(),
+        )
+        .unwrap();
+        fs::write(task_dir.join("prompt.md"), prompt).unwrap();
+        let fake = Fake {
+            calls: RefCell::new(vec![]),
+            environment: "linux-rust",
+            fail: "",
+        };
+        let id = workflow::run(
+            &fake,
+            &Config::default(),
+            repo.path(),
+            state.path(),
+            workflow::Attempt {
+                agent: Agent::Codex,
+                model: "exact-model",
+                task_name: name,
+            },
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let (dir, run) = terminal_game_taste_bench::protocol::load_run(repo.path(), &id).unwrap();
+        assert_eq!(run.task_name, name);
+        assert_eq!(fs::read(dir.join("prompt.md")).unwrap(), prompt);
+        assert_eq!(run.prompt_sha256, archive::hash(prompt));
+        let archived =
+            terminal_game_taste_bench::protocol::archived_task_contract(&dir, &run).unwrap();
+        assert_eq!(
+            (archived.columns, archived.rows),
+            (contract.columns, contract.rows)
+        );
+        assert_eq!(run.outcome.completion, Completion::Normal);
+        assert_eq!(run.cleanup, ArtifactStatus::Complete);
+    }
+}
+#[test]
 fn editing_current_inputs_preserves_existing_attempt_snapshots() {
     let (repo, state) = setup();
     let fake = Fake {
@@ -290,7 +351,8 @@ fn editing_current_inputs_preserves_existing_attempt_snapshots() {
     let original_lock = include_bytes!("../../environments/linux-rust/environment.lock.json");
     fs::write(&lock_path, original_lock).unwrap();
     let first = execute(&fake, repo.path(), state.path()).unwrap();
-    let (first_dir, first_run) = bench::protocol::load_run(repo.path(), &first).unwrap();
+    let (first_dir, first_run) =
+        terminal_game_taste_bench::protocol::load_run(repo.path(), &first).unwrap();
     let before = archive::inventory(&first_dir, 1_000_000, 100).unwrap();
 
     fs::write(repo.path().join("tasks/spaceship/prompt.md"), "changed\n").unwrap();
@@ -313,7 +375,8 @@ fn editing_current_inputs_preserves_existing_attempt_snapshots() {
         &AtomicBool::new(false),
     )
     .unwrap();
-    let (second_dir, second_run) = bench::protocol::load_run(repo.path(), &second).unwrap();
+    let (second_dir, second_run) =
+        terminal_game_taste_bench::protocol::load_run(repo.path(), &second).unwrap();
     assert_eq!(first_run.task_name, second_run.task_name);
     assert_ne!(first_run.prompt_sha256, second_run.prompt_sha256);
     assert_ne!(first_run.task_sha256, second_run.task_sha256);
@@ -326,13 +389,13 @@ fn editing_current_inputs_preserves_existing_attempt_snapshots() {
         b"changed\n"
     );
     assert_eq!(
-        bench::protocol::archived_task_contract(&first_dir, &first_run)
+        terminal_game_taste_bench::protocol::archived_task_contract(&first_dir, &first_run)
             .unwrap()
             .columns,
         124
     );
     assert_eq!(
-        bench::protocol::archived_task_contract(&second_dir, &second_run)
+        terminal_game_taste_bench::protocol::archived_task_contract(&second_dir, &second_run)
             .unwrap()
             .columns,
         100
@@ -372,8 +435,8 @@ fn playback_dimensions_come_from_the_verified_archive() {
     };
     let id = execute(&fake, repo.path(), state.path()).unwrap();
     fs::remove_dir_all(repo.path().join("tasks")).unwrap();
-    let (dir, run) = bench::protocol::load_run(repo.path(), &id).unwrap();
-    let contract = bench::protocol::archived_task_contract(&dir, &run).unwrap();
+    let (dir, run) = terminal_game_taste_bench::protocol::load_run(repo.path(), &id).unwrap();
+    let contract = terminal_game_taste_bench::protocol::archived_task_contract(&dir, &run).unwrap();
     assert_eq!((contract.columns, contract.rows), (124, 69));
     let original = fs::read_to_string(dir.join("task.toml")).unwrap();
     fs::write(
@@ -381,8 +444,8 @@ fn playback_dimensions_come_from_the_verified_archive() {
         original.replace("columns = 124", "columns = 120"),
     )
     .unwrap();
-    assert!(bench::protocol::archived_task_contract(&dir, &run).is_err());
-    assert!(bench::protocol::load_run(repo.path(), &id).is_err());
+    assert!(terminal_game_taste_bench::protocol::archived_task_contract(&dir, &run).is_err());
+    assert!(terminal_game_taste_bench::protocol::load_run(repo.path(), &id).is_err());
 }
 #[test]
 fn failures_destroy_guests_and_preserve_metadata() {
@@ -421,7 +484,8 @@ fn stopped_snapshot_recovery_preserves_the_attempt_and_failure_history() {
         fail: "export",
     };
     let id = execute(&fake, repo.path(), state.path()).unwrap();
-    let (dir, before) = bench::protocol::load_run_metadata(repo.path(), &id).unwrap();
+    let (dir, before) =
+        terminal_game_taste_bench::protocol::load_run_metadata(repo.path(), &id).unwrap();
     assert_eq!(before.export.status, ArtifactStatus::Failed);
     let pack = |entries: &[(&str, &[u8])]| {
         let mut builder = tar::Builder::new(Vec::new());
@@ -453,7 +517,7 @@ fn stopped_snapshot_recovery_preserves_the_attempt_and_failure_history() {
         &AtomicBool::new(false),
     )
     .unwrap();
-    let (_, after) = bench::protocol::load_run(repo.path(), &id).unwrap();
+    let (_, after) = terminal_game_taste_bench::protocol::load_run(repo.path(), &id).unwrap();
     assert_eq!(after.started_at, before.started_at);
     assert_eq!(after.ended_at, before.ended_at);
     assert_eq!(after.prompt_sha256, before.prompt_sha256);
@@ -520,7 +584,7 @@ fn duplicate_daily_id_preserves_the_existing_archive() {
         fail: "",
     };
     let id = execute(&fake, repo.path(), state.path()).unwrap();
-    let (dir, run) = bench::protocol::load_run(repo.path(), &id).unwrap();
+    let (dir, run) = terminal_game_taste_bench::protocol::load_run(repo.path(), &id).unwrap();
     let before = archive::tree_hash(&archive::inventory(&dir, 1_000_000, 100).unwrap()).unwrap();
     let task = Task::load(repo.path(), "spaceship").unwrap();
     let store = RunStore::open(repo.path()).unwrap();
@@ -563,7 +627,7 @@ fn edited_archives_fail_checksum_verification() {
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
     }
     fs::write(path, "tampered").unwrap();
-    assert!(bench::protocol::load_run(repo.path(), &id).is_err());
+    assert!(terminal_game_taste_bench::protocol::load_run(repo.path(), &id).is_err());
 }
 #[test]
 fn partial_create_is_guarded_and_never_reused() {
@@ -617,7 +681,9 @@ fn claude_pin_is_recorded_and_mismatched_runtime_is_rejected_before_delivery() {
             &AtomicBool::new(false),
         );
         if fail.is_empty() {
-            let (_, run) = bench::protocol::load_run(repo.path(), &result.unwrap()).unwrap();
+            let (_, run) =
+                terminal_game_taste_bench::protocol::load_run(repo.path(), &result.unwrap())
+                    .unwrap();
             assert_eq!(run.agent.cli_version.as_deref(), Some("2.1.280"));
             assert_eq!(run.environment.environment, "linux-rust");
             assert_eq!(run.agent.requested_model, "claude-opus-5-5");

@@ -4,7 +4,7 @@
   "kits": [],
   "state": "running",
   "uptime": "2s",
-  "image": "spaceship-bench-base:linux-rust",
+  "image": "terminal-game-taste-bench-base:linux-rust",
   "image_digest": "sha256:91df800504fbed41009f344c07afa9fbb1b43fb85c5b4493b8edc0d2c5c7626d",
   "cpus": 2,
   "memory": "2g",

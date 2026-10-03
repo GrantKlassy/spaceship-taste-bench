@@ -1,4 +1,5 @@
-# Copy to bench.local.toml; never place credentials in this file.
+# terminal-game-taste-bench: copy to bench.local.toml; never place credentials here.
+# Select a task for each attempt with bench run --task <task-name>.
 schema_version = 1
 backend = "sbx"
 sbx = "sbx"

@@ -1,16 +1,16 @@
 //! Replay controller tests use trusted data and a simulated VM, never host Cargo.
 use anyhow::Result;
-use bench::{
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
+use terminal_game_taste_bench::{
     archive,
     config::Config,
     protocol::{ArtifactStatus, EnvironmentIdentity, Run},
     replay,
     sandbox::{Role, Sandbox},
-};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Command,
 };
 
 struct PackageFixture {
@@ -97,7 +97,7 @@ fn setup() -> (tempfile::TempDir, tempfile::TempDir, Run) {
         "agent": {"name":"codex","cli_version":null,"requested_model":"fixture","reported_model":null,"invocation":[],"settings":{}},
         "environment": {"backend":"test-only","backend_version":null,"environment":"linux-rust","image_digest":null,"rust":null,"architecture":null,"effective_limits":null,"network_policy":null,"isolation_verified":false},
         "requested_limits": Config::default().limits, "allocated_at":"2026-09-21T19:00:00Z","started_at":null,"ended_at":null,"elapsed_seconds":null,
-        "outcome": bench::agents::Outcome::default(),
+        "outcome": terminal_game_taste_bench::agents::Outcome::default(),
         "export": {"status":"complete","reason":null,"tree_sha256":archive::tree_hash(&files).unwrap(),"files":files},
         "cleanup":"complete","replay_preparation":"pending"
     })).unwrap();
@@ -155,7 +155,7 @@ fn replay_requires_the_archived_mode_before_creating_a_guest() {
         mutate_copy: false,
     };
     let config = Config {
-        mode: bench::config::ExecutionMode::DockerPilot,
+        mode: terminal_game_taste_bench::config::ExecutionMode::DockerPilot,
         ..Config::default()
     };
     assert!(replay::prepare(&backend, &config, dir.path(), &run, state.path()).is_err());

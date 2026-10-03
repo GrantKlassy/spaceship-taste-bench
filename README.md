@@ -1,10 +1,19 @@
-# Spaceship taste bench
+# Terminal game taste bench
 
-A chronological showcase of individual coding-agent attempts. Each agent gets the current task prompt, archived exactly for that attempt, creates a Rust terminal spaceship game, and leaves an unedited submission. A person plays it and writes a subjective review. There are no scores, evaluator models, rankings, repeated-trial machinery, or generated reviews.
+A benchmark for evaluating coding agents' ability to create terminal games through individual attempts and human reviews. Each agent gets a selected task prompt, archived exactly for that attempt, and leaves an unedited submission. A person plays the result and writes a subjective review. Attempts form a chronological showcase; there are no scores, evaluator models, rankings, repeated-trial machinery, or generated reviews.
 
-**Status: no runs recorded.** The harness supports Codex and Claude Code subscription attempts in Docker pilot mode. The pilot records the accepted gateway/configuration/storage limitations; strict attempts remain blocked by certification requirements. Docker Sandboxes `sbx` 0.45.0 is the sole backend. Follow the [pilot workflow](docs/PILOT.md) for authentication, readiness checks and the first smoke task. See [verification status](docs/VERIFICATION.md) for harness and environment checks.
+**Status: no run archives tracked in this checkout.** The harness supports Codex and Claude Code subscription attempts in Docker pilot mode. The pilot records the accepted gateway/configuration/storage limitations; strict attempts remain blocked by certification requirements. Docker Sandboxes `sbx` 0.45.0 is the sole backend. Follow the [pilot workflow](docs/PILOT.md) for authentication, readiness checks and the first smoke task. See [verification status](docs/VERIFICATION.md) for harness and environment checks.
 
-The development host is Ubuntu 24.04 under WSL2, x86-64, with Rust 1.97.0, Docker Engine 29.8.1, Buildx 0.37.1, `sbx` 0.45.0, KVM access, Docker sign-in and a deny-all baseline. The `linux-rust` environment pins Claude Code 2.1.280 and Codex 0.155.1. The default task is `spaceship`; `smoke` provides a small end-to-end check.
+The current tasks use Rust in the `linux-rust` environment. Select a task explicitly with `bench run --task <task-name>`:
+
+| Task | Purpose | Terminal size |
+| --- | --- | --- |
+| [`spaceship`](tasks/spaceship/prompt.md) | Create a polished terminal spaceship game | 124 × 69 |
+| [`smoke`](tasks/smoke/prompt.md) | Exercise generation, dependency packaging and offline playback with a tiny program | 120 × 40 |
+
+Spaceship is one game task within the benchmark. Smoke checks the harness workflow. Each task defines its own prompt and terminal contract.
+
+The development host is Ubuntu 24.04 under WSL2, x86-64, with Rust 1.97.0, Docker Engine 29.8.1, Buildx 0.37.1, `sbx` 0.45.0, KVM access, Docker sign-in and a deny-all baseline. The `linux-rust` environment pins Claude Code 2.1.280 and Codex 0.155.1.
 
 Tasks, environments and configs use stable names and are updated in place. Keep one current implementation of each; Git preserves code history, and run directories preserve each attempt's exact inputs.
 
@@ -14,7 +23,7 @@ Run from this repository root:
 
 ```sh
 rustup toolchain install 1.97.0 --profile minimal --component rustfmt --component clippy
-cargo +1.97.0 install --path harness --locked
+cargo +1.97.0 install --path harness --locked --force
 bench doctor
 ```
 
@@ -48,13 +57,13 @@ Only the harness is compiled on the host. Submissions and their Cargo build scri
 
 Follow [SETUP.md](docs/SETUP.md), then copy `bench.example.toml` to ignored `bench.local.toml` to adjust machine-protection limits. Unknown settings, including time/token budget keys, are rejected.
 
-Prepare images without starting an attempt:
+For a new, unresolved environment, prepare images without starting an attempt:
 
 ```sh
 python3 environments/linux-rust/prepare.py
 ```
 
-This requires an independently installed Docker image builder and local `sbx` 0.45.0. It builds the trusted Dockerfiles directly from pinned upstream images, checks both agent package integrities, and verifies fresh built-in runtime startup/version before recording actual image IDs. Both agents inherit the same base layers. The current lock is already resolved; load the saved `build/*.tar` bundles to reuse those images. For an intentional update, edit the existing environment and reviewed CLI pins, then run `prepare.py --rebuild`. Retain any image bundles needed by archived attempts before rebuilding. Image preparation makes no model request.
+This requires an independently installed Docker image builder and local `sbx` 0.45.0. It builds the trusted Dockerfiles directly from pinned upstream images, checks both agent package integrities, and verifies fresh built-in runtime startup/version before recording actual image IDs. Both agents inherit the same base layers. Images use `terminal-game-taste-bench-{base,claude,codex}:linux-rust` tags. The current lock is already resolved; reuse matching installed images or load preserved `build/*.tar` bundles. Those ignored bundles do not come with a clone; see [image setup](docs/SETUP.md#trusted-images). If no matching images or archives are available, or for an intentional update, use `prepare.py --rebuild` to update this environment in place. Retain any image bundles needed by archived attempts before rebuilding. Image preparation makes no model request.
 
 The requested authentication commands are:
 
@@ -75,18 +84,18 @@ limitations and never claim strict isolation certification.
 
 For an Opus 5.5 attempt, use `bench auth claude`, then `bench doctor --agent claude`
 and `bench run --agent claude --model claude-opus-5-5 --task smoke`.
-On a later UTC date, omit `--task smoke` to use the spaceship prompt. Smoke
+On a later UTC date, use `--task spaceship` to try the spaceship game task. Smoke
 and game attempts share the one-run-per-agent/model/date limit.
 
 ## Strict attempts, once certification is complete
 
-Edit `tasks/spaceship/prompt.md` and `task.toml` in place. Allocation snapshots the selected task and environment lock for that attempt. Later edits apply to future attempts; existing archives remain unchanged and checksum-verified. Prompt bytes, including the final newline, are delivered exactly once through stdin.
+Keep each task's prompt and contract in `tasks/<task-name>/prompt.md` and `tasks/<task-name>/task.toml`. Update an existing task in place; give a distinct game task its own descriptive name. The contract's `name` must match its directory and its environment must be supported by the harness. The current environment supports self-contained Rust Cargo projects, crates.io dependencies and offline terminal playback. Allocation snapshots the selected task and environment lock for that attempt. Later edits apply to future attempts; existing archives remain unchanged and checksum-verified. Prompt bytes, including the final newline, are delivered exactly once through stdin.
 
 In strict mode, after the blockers in [VERIFICATION.md](docs/VERIFICATION.md) are resolved:
 
 ```sh
-bench run --agent claude --model '<exact-model-id>'
-bench run --agent codex --model '<exact-model-id>'
+bench run --agent claude --model '<exact-model-id>' --task '<task-name>'
+bench run --agent codex --model '<exact-model-id>' --task '<task-name>'
 ```
 
 Strict-mode commands currently fail **before prompt delivery**. The separate Docker pilot changes the recorded protocol rather than certifying strict isolation. There is no host/container fallback. Failed prerequisite checks are not attempts. A failure after allocation retains its run directory and reserves that agent/model/date; a retry with the same agent/model must use a later UTC date.
@@ -134,7 +143,7 @@ including smoke tasks and retries.
 
 Solutions are independent Cargo projects, not members of a repository-wide workspace. `solution/` is made read-only and checked against its inventory before playback. Git does not preserve read-only permissions, so checksum verification remains necessary after a clone. Empty directories are preserved in local exports/replay but Git itself does not track empty directories.
 
-Private state defaults to `$XDG_STATE_HOME/spaceship-taste-bench`, or `~/.local/state/spaceship-taste-bench`. `BENCH_STATE_DIR` can select a dedicated directory outside the checkout. It contains `raw/<run-id>/stdout.jsonl`, `stderr.log`, cleanup journals, temporary full snapshots, and `bundles/*.tar`. Backend administrative diagnostics are retained under private `backend/` directories, with 64 KiB per stdout/stderr stream per operation; attempt setup and packaging logs stay under `raw/<run-id>/`. Authentication flows are not logged. Logs use mode 0600; the state directory uses 0700. Transcript size is bounded; truncation is recorded without ending an attempt. Nothing there is automatically published. Bundle references in `replay.json` are basenames relative to the private `bundles/` directory.
+Private state defaults to `$XDG_STATE_HOME/terminal-game-taste-bench`, or `~/.local/state/terminal-game-taste-bench`. `BENCH_STATE_DIR` can select a dedicated directory outside the checkout. It contains `raw/<run-id>/stdout.jsonl`, `stderr.log`, cleanup journals, temporary full snapshots, and `bundles/*.tar`. Backend administrative diagnostics are retained under private `backend/` directories, with 64 KiB per stdout/stderr stream per operation; attempt setup and packaging logs stay under `raw/<run-id>/`. Authentication flows are not logged. Logs use mode 0600; the state directory uses 0700. Transcript size is bounded; truncation is recorded without ending an attempt. Nothing there is automatically published. Bundle references in `replay.json` are basenames relative to the private `bundles/` directory.
 
 ## Troubleshooting
 

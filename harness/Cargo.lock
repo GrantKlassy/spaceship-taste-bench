@@ -80,28 +80,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
-name = "bench"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "ctrlc",
- "flate2",
- "fs2",
- "hex",
- "libc",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tempfile",
- "toml",
- "uuid",
- "walkdir",
-]
-
-[[package]]
 name = "bitflags"
 version = "2.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -728,6 +706,28 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys",
+]
+
+[[package]]
+name = "terminal-game-taste-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "ctrlc",
+ "flate2",
+ "fs2",
+ "hex",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "toml",
+ "uuid",
+ "walkdir",
 ]
 
 [[package]]

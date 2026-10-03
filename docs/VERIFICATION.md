@@ -1,6 +1,6 @@
 # Evidence and remaining integration work
 
-No benchmark attempts are recorded. This document covers harness and environment checks using installed CLI help, official documentation and trusted local microVM fixtures. Follow [PILOT.md](PILOT.md) to verify model generation and offline smoke playback before the first game attempt. Strict certification remains incomplete.
+No benchmark attempt archives are tracked in this checkout. This document covers harness and environment checks using installed CLI help, official documentation and trusted local microVM fixtures. Follow [PILOT.md](PILOT.md) to verify model generation and offline smoke playback before a game attempt. Strict certification remains incomplete.
 
 ## Harness and environment readiness
 
@@ -64,12 +64,25 @@ The earlier `bench doctor --agent claude --json` check reported `ready: true`,
 including Claude Code 2.1.280, subscription reuse, provider network policy,
 resources and replacement-volume freshness.
 
-## Canonical names and input snapshots, 2026-10-02
+## Project naming and input snapshots, 2026-10-02
 
-The repository keeps one `linux-rust` environment and two tasks, `spaceship`
-and `smoke`. Their contents are updated in place. Current image contents and
-IDs are retained under the canonical tags; obsolete task/environment copies,
-predecessor-image dependencies and CLI compatibility branches are removed.
+The project and Cargo package are `terminal-game-taste-bench`; the executable
+remains `bench`. It evaluates coding agents' terminal games through preserved
+attempts and human reviews. Runs require `--task <task-name>`; no game is selected
+implicitly. The repository keeps one `linux-rust` environment and two tasks,
+`spaceship` and `smoke`, with their prompt and contract bytes unchanged. Each task,
+environment and config is maintained in place.
+
+Local resources were inspected before migration. The three Docker images matched
+the recorded IDs and were retagged and loaded into `sbx` as
+`terminal-game-taste-bench-{base,claude,codex}:linux-rust`, without rebuilding.
+Private `build/{base,claude,codex}.tar` archives were recreated for the fresh clone.
+The private state directory was moved to `~/.local/state/terminal-game-taste-bench`
+with its 0700 permissions, and its marker and local progress helper were updated.
+SHA-256 inventories verified that all 7,790 other files retained their exact bytes
+and permissions, including historical logs, replay bundles and retained snapshots.
+Those private records do not replace missing `runs/<run-id>/` archives; historical
+playback still needs the matching run directories and their archived inputs.
 
 Each attempt still snapshots and hashes its exact inputs. Tests cover changing
 the current prompt, contract and environment lock without changing an older
@@ -77,19 +90,25 @@ run, and rejecting tampered archived inputs. Playback and recovery select the
 archived lock. Git preserves source history; numbered directory copies are
 not part of the workflow.
 
-All 86 ordinary Rust tests and three image-preparation tests pass, along with
+All 88 ordinary Rust tests and three image-preparation tests pass, along with
 formatting, Clippy with `-D warnings`, and Docker build checks for all three
 Dockerfiles. Fresh base, Claude and Codex guests pass startup/version checks
 under the canonical image tags, with unchanged image IDs. The old local image
-tags and bundles are removed, and the updated harness is installed on PATH.
-No task was allocated or model request made by these checks.
+tags are removed, and the updated harness is installed on PATH.
+Pilot readiness passes for both agents; strict readiness still reports its
+existing certification blockers. Tests cover explicit task selection, smoke and
+an arbitrary game task without a spaceship directory, and HOME/XDG/explicit
+private-state selection with preserved data. The pilot integration check passes
+registry vendoring, stopped snapshot export using the renamed export tag, PTY
+transport, frozen replay in a fresh VM and cleanup. No task was allocated or model
+request made by these checks.
 
 ## Remaining strict-mode certification work
 
 1. **MCP gateway and credential scope.** `sbx inspect` still reports an MCP gateway and an attached `mcpgateway` service. Shell guests still receive unrelated provider/integration bindings. A previous fixed HTTP probe reached the gateway under explicit deny-all and received HTTP 400; no MCP tool was invoked. Docker documents that every sandbox starts a gateway, and MCP governance is separate from network policy. The installed local `policy deny` interface only supports networking. [MCP access policies](https://docs.docker.com/ai/sandboxes/governance/access-controls/mcp/) require organization governance; there is no local MCP preset. A supported removal mechanism or independently verified external denial is still needed. An empty server registry or an agent flag does not provide that isolation.
 2. **Actual agent runtime configuration.** Codex gets generated `.codex/config.toml` gateway settings; Claude gets generated `.claude` settings and gateway configuration. The effective neutral settings and broker state still require verification after backend service isolation is resolved. CLI help/version success does not establish which managed settings take effect. Claude's additional storage is now accounted for and passes separate live checks.
 3. **Provider subscription authentication and egress.** Codex host-broker OAuth, fresh-guest OAuth mode, placeholder credentials and absence of an API-key override pass readiness checks. Claude sign-in and fresh-guest subscription checks also pass. A real model request must be exercised with the smoke workflow. Long-lived token refresh, credential scoping and strict egress isolation still need certification. The pilot uses the selected agent's observed Docker network defaults plus crates.io.
-4. **Host snapshot/cache growth.** Guest root disk limits and parser/extraction limits are verified. `sbx template save --output` can create backend storage/cache before the parser sees the file. Neither an output-size check nor a free-space check is an enforced host-side growth limit. The installed interface has no verified bounded export option. A supported backend limit or administrator-provided, verified filesystem quota is required; passwordless administrator access is unavailable on this host. No storage directories were moved and no filesystems or quotas were changed.
+4. **Host snapshot/cache growth.** Guest root disk limits and parser/extraction limits are verified. `sbx template save --output` can create backend storage/cache before the parser sees the file. Neither an output-size check nor a free-space check is an enforced host-side growth limit. The installed interface has no verified bounded export option. A supported backend limit or administrator-provided, verified filesystem quota is required; passwordless administrator access is unavailable on this host. Backend storage directories, filesystems and quotas were unchanged.
 5. **Remaining network coverage.** Explicit authorizer checks cover hostnames, host/metadata destinations, IPv4, IPv6, loopback/LAN and UDP decisions. Live HTTP probes cover normal proxy use and bypassing proxy environment variables. Under dependency policy, both proxy and direct requests fetch the real sparse index; the downloaded crate checksum matches that index. Denied direct hostnames can fail at DNS, while some raw host/metadata routes close/refuse connections. Those transport failures are recorded as observations, not proof that policy caused them. Complete controlled raw IPv4/IPv6, non-HTTP TCP, UDP/ICMP and redirect acceptance before claiming all paths are certified.
 
 These requirements remain enforced in strict mode. The Docker pilot accepts and records the documented exceptions; it still requires observed OAuth mode and rejects API-key overrides. There is no user-editable certificate, host-execution path or ordinary-container fallback.
@@ -115,7 +134,7 @@ Raw administrative output remains in private state under bounded `backend/` dire
 
 ## Local results
 
-- Ordinary Rust suite: **86 passed**, seven opt-in tests ignored by default. Tests include Claude lifecycle/model/subscription metadata, rejection of API billing or missing broker evidence, separate provider network policies, archived playback dimensions, terminal restoration, snapshot retention and recovery without another model request.
+- Ordinary Rust suite: **88 passed**, seven opt-in tests ignored by default. Tests include explicit task selection, task-independent lifecycle and terminal contracts, private-state paths and reopening, Claude lifecycle/model/subscription metadata, rejection of API billing or missing broker evidence, separate provider network policies, archived playback dimensions, terminal restoration, snapshot retention and recovery without another model request.
 - Formatting and Clippy with `-D warnings`: passed.
 - Image preparation: three Python tests passed, covering explicit rebuilds, current base/package pins, minimal build contexts, and preservation of existing bundles and lock on failed runtime verification.
 - Docker pilot `bench check-integration`: passed, including generation policy transitions, production package/playback verification, real registry download/vendoring, stopped source/package export, 120×40 PTY/Ctrl-C, fresh-VM frozen replay and guest cleanup. No model request or task allocation was used.
@@ -125,7 +144,7 @@ Raw administrative output remains in private state under bounded `backend/` dire
 - Real dependency vendoring, stopped source/package export and clean-VM frozen replay: passed. Integration still fails required host-service isolation.
 - Live cancellation: all four checks passed: provisioning, post-creation, snapshot export and the guest build phase.
 
-Only the harness, reviewed image preparation and trusted test drivers execute on the host. Fixture and generated-project Cargo commands execute inside microVMs. The default `spaceship` and `smoke` tasks select `linux-rust`. Each allocation snapshots the current prompt, contract and environment lock; future edits do not rewrite archived inputs.
+Only the harness, reviewed image preparation and trusted test drivers execute on the host. Fixture and generated-project Cargo commands execute inside microVMs. The current `spaceship` and `smoke` tasks select `linux-rust`; each run selects its task explicitly. Each allocation snapshots the current prompt, contract and environment lock; future edits do not rewrite archived inputs.
 
 ## References
 

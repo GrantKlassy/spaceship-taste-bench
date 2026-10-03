@@ -24,15 +24,15 @@
   },
   "images": {
     "base": {
-      "reference": "spaceship-bench-base:linux-rust",
+      "reference": "terminal-game-taste-bench-base:linux-rust",
       "image_id": "sha256:2fac5a82b10b599e6ef0a603238a156ce32c4a867a635bf4f337c510cc921f71"
     },
     "claude": {
-      "reference": "spaceship-bench-claude:linux-rust",
+      "reference": "terminal-game-taste-bench-claude:linux-rust",
       "image_id": "sha256:91e1ba9c7e7c5fd268b5967433daf6d45c5c780a2bd92966fd580a657a215ee3"
     },
     "codex": {
-      "reference": "spaceship-bench-codex:linux-rust",
+      "reference": "terminal-game-taste-bench-codex:linux-rust",
       "image_id": "sha256:fea323e091e30c92de51c5637abc8c1345efb75627b1239dcb717270a65ca469"
     }
   },

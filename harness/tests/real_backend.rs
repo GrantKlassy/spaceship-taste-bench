@@ -1,5 +1,5 @@
 //! Opt-in only. A blocked prerequisite FAILS; it is never reported as an isolation pass.
-use bench::{
+use terminal_game_taste_bench::{
     config::Config,
     sandbox::{self, Sbx},
 };
@@ -7,17 +7,17 @@ use bench::{
 #[test]
 #[ignore = "requires local sbx and crates.io; exports and replays a trusted vendored fixture, no model call"]
 fn real_vendored_terminal_fixture_export() {
-    use bench::{
+    use std::{fs, sync::atomic::AtomicBool};
+    use terminal_game_taste_bench::{
         archive,
         config::ExecutionMode,
         process,
         sandbox::{Guest, Role, Sandbox},
     };
-    use std::{fs, sync::atomic::AtomicBool};
     let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap();
-    let state = bench::config::state_dir(repo).unwrap();
+    let state = terminal_game_taste_bench::config::state_dir(repo).unwrap();
     let work = tempfile::Builder::new()
         .prefix("vendor-export-check-")
         .tempdir_in(&state)
@@ -72,30 +72,31 @@ fn real_vendored_terminal_fixture_export() {
     );
     result.unwrap();
     let solution = work.join("solution");
-    bench::replay::validate_submission(&solution).unwrap();
+    terminal_game_taste_bench::replay::validate_submission(&solution).unwrap();
     let files = archive::inventory(
         &solution,
         config.limits.export_bytes,
         config.limits.export_files,
     )
     .unwrap();
-    let run: bench::protocol::Run = serde_json::from_value(serde_json::json!({
+    let run: terminal_game_taste_bench::protocol::Run = serde_json::from_value(serde_json::json!({
         "schema_version": 1, "protocol_version": config.mode.protocol(),
-        "mode": config.mode, "accepted_limitations": config.mode.limitations(bench::agents::Agent::Codex),
+        "mode": config.mode, "accepted_limitations": config.mode.limitations(terminal_game_taste_bench::agents::Agent::Codex),
         "run_id": format!("fixture-{}", uuid::Uuid::new_v4().simple()),
         "task_name": "fixture", "prompt_sha256": "unused", "task_sha256": "unused", "input_sha256": {},
         "harness": {"commit": null,"dirty":null},
         "agent": {"name":"codex","cli_version":null,"requested_model":"fixture","reported_model":null,"invocation":[],"settings":{}},
         "environment": {"backend":"sbx","backend_version":null,"environment":config.environment,"image_digest":null,"rust":null,"architecture":null,"effective_limits":null,"network_policy":null,"isolation_verified":false},
         "requested_limits": config.limits, "allocated_at":chrono::Utc::now(),"started_at":null,"ended_at":null,"elapsed_seconds":null,
-        "outcome": bench::agents::Outcome::default(),
+        "outcome": terminal_game_taste_bench::agents::Outcome::default(),
         "export": {"status":"complete","reason":null,"tree_sha256":archive::tree_hash(&files).unwrap(),"files":files},
         "cleanup":"complete","replay_preparation":"pending"
     })).unwrap();
-    let prepared = bench::replay::prepare(&backend, &config, &work, &run, &state).unwrap();
+    let prepared =
+        terminal_game_taste_bench::replay::prepare(&backend, &config, &work, &run, &state).unwrap();
     assert_eq!(
         prepared.preparation,
-        bench::protocol::ArtifactStatus::Complete
+        terminal_game_taste_bench::protocol::ArtifactStatus::Complete
     );
     let source_tar = work.join("source.tar");
     archive::pack(
@@ -159,7 +160,7 @@ fn real_stopped_snapshot_export() {
     let input = std::env::var_os("BENCH_TEST_SNAPSHOT").expect("set BENCH_TEST_SNAPSHOT");
     let work = tempfile::tempdir().unwrap();
     let output = work.path().join("solution");
-    let files = bench::archive::extract_image_workspace(
+    let files = terminal_game_taste_bench::archive::extract_image_workspace(
         std::path::Path::new(&input),
         "workspace",
         &output,
@@ -171,7 +172,7 @@ fn real_stopped_snapshot_export() {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/tiny");
     assert_eq!(
         files,
-        bench::archive::inventory(&fixture, 1024 * 1024, 100).unwrap()
+        terminal_game_taste_bench::archive::inventory(&fixture, 1024 * 1024, 100).unwrap()
     );
 }
 
@@ -215,7 +216,7 @@ fn ctrl_c_at(trigger: &str) {
         .unwrap();
     let work = tempfile::tempdir().unwrap();
     let config = Config {
-        limits: bench::config::Limits {
+        limits: terminal_game_taste_bench::config::Limits {
             cpus: 2,
             memory_mib: 2048,
             // Full image layers exceed the tiny guest writable fixture size.
@@ -237,16 +238,18 @@ fn ctrl_c_at(trigger: &str) {
             }
             let _ = self.child.wait();
             for name in &self.guests {
-                let _ = bench::process::host_command(std::path::Path::new("sbx"))
-                    .args(["rm", "--force", name])
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status();
+                let _ =
+                    terminal_game_taste_bench::process::host_command(std::path::Path::new("sbx"))
+                        .args(["rm", "--force", name])
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .status();
             }
         }
     }
-    let mut command =
-        bench::process::host_command(std::path::Path::new(env!("CARGO_BIN_EXE_bench")));
+    let mut command = terminal_game_taste_bench::process::host_command(std::path::Path::new(env!(
+        "CARGO_BIN_EXE_bench"
+    )));
     command
         .arg("--repo")
         .arg(repo)
@@ -280,7 +283,7 @@ fn ctrl_c_at(trigger: &str) {
             }
             progress.push_back(line.clone());
             if let Some(name) = line.strip_prefix("Provisioning guest: ") {
-                bench::config::parse_component(name).unwrap();
+                terminal_game_taste_bench::config::parse_component(name).unwrap();
                 assert!(name.starts_with("bench-") && name.len() < 50);
                 process.guests.push(name.to_owned());
             }
@@ -316,7 +319,7 @@ fn ctrl_c_at(trigger: &str) {
         Some(1)
     );
     reader.join().unwrap();
-    let output = bench::process::host_command(std::path::Path::new("sbx"))
+    let output = terminal_game_taste_bench::process::host_command(std::path::Path::new("sbx"))
         .args(["ls", "--json"])
         .output()
         .unwrap();
@@ -333,7 +336,7 @@ fn ctrl_c_at(trigger: &str) {
                 .any(|name| s["name"].as_str() == Some(name.as_str()))),
         "Ctrl-C left its guest behind"
     );
-    let output = bench::process::host_command(std::path::Path::new("sbx"))
+    let output = terminal_game_taste_bench::process::host_command(std::path::Path::new("sbx"))
         .args(["template", "ls", "--json"])
         .output()
         .unwrap();
