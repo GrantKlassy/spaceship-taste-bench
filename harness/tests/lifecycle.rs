@@ -447,7 +447,7 @@ fn stopped_snapshot_recovery_preserves_the_attempt_and_failure_history() {
     );
 }
 #[test]
-fn each_explicit_attempt_gets_new_id_and_no_previous_input() {
+fn different_models_get_separate_attempts_and_no_previous_input() {
     let (repo, state) = setup();
     let fake = Fake {
         calls: RefCell::new(vec![]),
@@ -455,7 +455,19 @@ fn each_explicit_attempt_gets_new_id_and_no_previous_input() {
         fail: "",
     };
     let a = execute(&fake, repo.path(), state.path()).unwrap();
-    let b = execute(&fake, repo.path(), state.path()).unwrap();
+    let b = workflow::run(
+        &fake,
+        &legacy_config(),
+        repo.path(),
+        state.path(),
+        workflow::Attempt {
+            agent: Agent::Codex,
+            model: "another-model",
+            task_version: "spaceship-v1",
+        },
+        &AtomicBool::new(false),
+    )
+    .unwrap();
     assert_ne!(a, b);
     assert_eq!(
         fake.calls
@@ -466,6 +478,38 @@ fn each_explicit_attempt_gets_new_id_and_no_previous_input() {
         2
     );
     assert!(!fake.calls.borrow().iter().any(|s| s == "import")); // no source/history input to generation
+}
+#[test]
+fn duplicate_daily_id_preserves_the_existing_archive() {
+    let (repo, state) = setup();
+    let fake = Fake {
+        calls: RefCell::new(vec![]),
+        environment: "linux-rust-v2",
+        fail: "",
+    };
+    let id = execute(&fake, repo.path(), state.path()).unwrap();
+    let (dir, run) = bench::protocol::load_run(repo.path(), &id).unwrap();
+    let before = archive::tree_hash(&archive::inventory(&dir, 1_000_000, 100).unwrap()).unwrap();
+    let task = Task::load(repo.path(), "spaceship-v1").unwrap();
+    let store = RunStore::open(repo.path()).unwrap();
+    let error = store
+        .allocate(&run, &task, b"replacement review", &Default::default())
+        .unwrap_err();
+    assert!(error.to_string().contains(&id));
+    assert!(
+        error
+            .to_string()
+            .contains("only one run per agent/model and UTC date")
+    );
+    let after = archive::tree_hash(&archive::inventory(&dir, 1_000_000, 100).unwrap()).unwrap();
+    assert_eq!(before, after);
+    assert_eq!(
+        fs::read_dir(&store.root)
+            .unwrap()
+            .filter(|entry| entry.as_ref().unwrap().path().is_dir())
+            .count(),
+        1
+    );
 }
 #[test]
 fn edited_archives_fail_checksum_verification() {

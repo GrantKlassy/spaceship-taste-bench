@@ -112,13 +112,50 @@ fn pilot_is_explicit_and_cannot_be_confused_with_strict_mode() {
     assert_eq!(Cli::try_parse_from(["bench", "doctor"]).unwrap().mode, None);
 }
 #[test]
-fn ids_are_utc_safe_unique_and_bounded() {
-    let now = chrono::Utc.with_ymd_and_hms(2026, 9, 21, 19, 0, 0).unwrap();
-    let a = protocol::run_id(Agent::Codex, "Test/Version:1", now);
-    let b = protocol::run_id(Agent::Codex, "Test/Version:1", now);
-    assert!(a.starts_with("20260921T190000Z--codex--test-version-1--"));
-    assert_ne!(a, b);
-    assert!(bench::config::parse_component(&a).is_ok());
+fn ids_use_agent_model_and_utc_date() {
+    let now = chrono::Utc
+        .with_ymd_and_hms(2026, 9, 24, 20, 51, 25)
+        .unwrap();
+    assert_eq!(
+        protocol::run_id(Agent::Codex, "gpt-6-astra", now),
+        "codex-gpt-6-astra-2026-09-24"
+    );
+    assert_eq!(
+        protocol::run_id(Agent::Claude, "claude-opus-5-5", now),
+        "claude-claude-opus-5-5-2026-09-24"
+    );
+    let later = chrono::Utc
+        .with_ymd_and_hms(2026, 9, 24, 23, 59, 59)
+        .unwrap();
+    assert_eq!(
+        protocol::run_id(Agent::Codex, "gpt-6-astra", now),
+        protocol::run_id(Agent::Codex, "gpt-6-astra", later)
+    );
+    let next_day = chrono::DateTime::parse_from_rfc3339("2026-09-24T23:30:00-07:00")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    assert_eq!(
+        protocol::run_id(Agent::Codex, "gpt-6-astra", next_day),
+        "codex-gpt-6-astra-2026-09-25"
+    );
+}
+#[test]
+fn model_slugs_collapse_separators_and_stay_bounded() {
+    let now = chrono::Utc
+        .with_ymd_and_hms(2026, 9, 24, 20, 51, 25)
+        .unwrap();
+    for (model, slug) in [
+        ("Test/Version:1".to_owned(), "test-version-1".to_owned()),
+        ("GPT--6../_:Astra---".to_owned(), "gpt-6-astra".to_owned()),
+        ("A".repeat(200), "a".repeat(64)),
+        (format!("{}-b", "a".repeat(63)), "a".repeat(63)),
+    ] {
+        assert!(bench::config::validate_model(&model).is_ok());
+        let id = protocol::run_id(Agent::Codex, &model, now);
+        assert_eq!(id, format!("codex-{slug}-2026-09-24"));
+        assert!(!id.contains("--"));
+        assert!(bench::config::parse_component(&id).is_ok());
+    }
 }
 #[test]
 fn task_contract_and_prompt_bytes_are_not_rewritten() {
@@ -167,7 +204,7 @@ fn freeze_rejects_corrupt_archived_metadata_instead_of_ignoring_it() {
     let repo = repo();
     let task = Task::load(repo.path(), "spaceship-v1").unwrap();
     let store = RunStore::open(repo.path()).unwrap();
-    fs::create_dir(store.root.join("20260921T190000Z--bad")).unwrap();
+    fs::create_dir(store.root.join("codex-bad-2026-09-21")).unwrap();
     assert!(store.check_frozen(&task).is_err());
 }
 #[test]

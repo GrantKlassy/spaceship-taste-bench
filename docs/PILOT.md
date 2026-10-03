@@ -43,6 +43,9 @@ OpenAI distinguishes [subscription login from API-key billing](https://learn.cha
 
 With an exact model ID, use the separate small smoke task before the game:
 
+A run reserves that agent/model's UTC date across all tasks. Schedule the game
+on a later UTC date than its smoke test.
+
 ```sh
 bench run --agent codex --model '<exact-model-id>' --task smoke-v2
 bench play '<smoke-run-id>'
@@ -53,7 +56,7 @@ For Opus 5.5 with the frozen `linux-rust-v3` image:
 ```sh
 bench run --agent claude --model claude-opus-5-5 --task smoke-v2
 bench play '<smoke-run-id>'
-# Then run spaceship-v2 with the game prompt:
+# On a later UTC date, run spaceship-v2 with the game prompt:
 bench run --agent claude --model claude-opus-5-5
 ```
 

@@ -15,7 +15,6 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-use uuid::Uuid;
 
 pub const SCHEMA: u32 = 1;
 pub const PROTOCOL: &str = "single-attempt-v1";
@@ -94,23 +93,22 @@ impl Task {
 }
 
 pub fn run_id(agent: Agent, model: &str, now: DateTime<Utc>) -> String {
-    let slug: String = model
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c.to_ascii_lowercase()
-            } else {
-                '-'
-            }
-        })
-        .take(64)
-        .collect();
+    let mut slug = String::new();
+    for c in model.chars() {
+        if slug.len() == 64 {
+            break;
+        }
+        if c.is_ascii_alphanumeric() {
+            slug.push(c.to_ascii_lowercase());
+        } else if !slug.is_empty() && !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
     format!(
-        "{}--{}--{}--{}",
-        now.format("%Y%m%dT%H%M%SZ"),
+        "{}-{}-{}",
         agent,
-        slug.trim_matches('-'),
-        &Uuid::new_v4().simple().to_string()[..16]
+        slug.trim_end_matches('-'),
+        now.format("%Y-%m-%d")
     )
 }
 
@@ -322,7 +320,8 @@ impl RunStore {
         let final_dir = self.root.join(&run.run_id);
         ensure!(
             !final_dir.exists(),
-            "run ID already exists; never overwrite an attempt"
+            "run {} already exists; only one run per agent/model and UTC date is allowed",
+            run.run_id
         );
         let stage = tempfile::Builder::new()
             .prefix(".alloc-")

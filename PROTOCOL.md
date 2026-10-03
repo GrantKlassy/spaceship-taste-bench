@@ -24,6 +24,12 @@ Each record is one particular attempt at one release/model, followed by a person
 
 The host controller selects an explicit agent, model identifier, task version and environment identity. It archives the task's exact UTF-8 prompt bytes and hashes them with SHA-256. No adapter adds design advice or rewrites the prompt. Tool-enabling settings are recorded separately.
 
+Run directories use `<agent>-<model-slug>-YYYY-MM-DD`, with a UTC date and single
+hyphens. The model slug is lowercase, collapses punctuation to a single hyphen,
+and is capped at 64 characters with trailing hyphens removed. Each agent/model
+slug can have one run per UTC date across all tasks, including smoke tasks.
+Allocation rejects an existing ID and preserves its artifacts.
+
 Before official attempts, edit the task freely. At allocation, a host file lock serializes freeze checking and creation of the input snapshot. Every subsequent allocation verifies the same version's prompt and task contract against existing metadata and archived bytes. Malformed records cause a failure, not a skipped check. A changed prompt or contract requires a new task directory/version. A changed environment lock under an existing environment identity is rejected. Machine-protection settings may change and are recorded per attempt.
 
 No parent `.git`, instructions, starter game, earlier solution, review, transcript, or run metadata is sent to a guest. A fresh neutral `/workspace` is initialized as an empty Git repository without a remote. Backend guest names are independent random identifiers, not the public run ID.
@@ -62,7 +68,7 @@ Failed exports preserve the stopped image and a bounded error log in private sta
 
 `bench recover <run-id>` can reprocess a retained stopped image after an export fix. It validates the archived inputs, mode, environment and original resource bounds, refuses an existing solution, and records the previous run metadata plus the snapshot checksum in `export-recovery.json`. Recovery updates export and replay status while retaining the original generation outcome, timestamps and usage. It neither makes a model request nor restarts the generation guest or edits source.
 
-Cleanup guards cover partially created guests and normal error unwinding. Ctrl-C/termination requests are handled by the controller. SIGKILL and host power loss require the exact-name recovery procedure in README. Explicit retries always allocate new IDs and never overwrite prior attempts.
+Cleanup guards cover partially created guests and normal error unwinding. Ctrl-C/termination requests are handled by the controller. SIGKILL and host power loss require the exact-name recovery procedure in README. Explicit retries with the same agent/model must use a later UTC date and never overwrite prior attempts.
 
 ## Replay and review
 

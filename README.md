@@ -72,7 +72,8 @@ limitations and never claim strict isolation certification.
 
 For an Opus 5.5 attempt, use `bench auth claude`, then `bench doctor --agent claude`
 and `bench run --agent claude --model claude-opus-5-5 --task smoke-v2`.
-After the smoke test, omit `--task smoke-v2` to use the spaceship prompt.
+On a later UTC date, omit `--task smoke-v2` to use the spaceship prompt. Smoke
+and game attempts share the one-run-per-agent/model/date limit.
 
 ## Strict attempts, once certification is complete
 
@@ -92,7 +93,7 @@ bench run --agent codex --model '<exact-model-id>'
 bench run --agent codex --model '<exact-model-id>' --task spaceship-v3
 ```
 
-Strict-mode commands currently fail **before prompt delivery**. The separate Docker pilot changes the recorded protocol rather than certifying strict isolation. There is no host/container fallback. Failed prerequisite checks are not attempts. A failure after allocation retains a distinct run directory; an explicitly started retry gets a new ID.
+Strict-mode commands currently fail **before prompt delivery**. The separate Docker pilot changes the recorded protocol rather than certifying strict isolation. There is no host/container fallback. Failed prerequisite checks are not attempts. A failure after allocation retains its run directory and reserves that agent/model/date; a retry with the same agent/model must use a later UTC date.
 
 Once a task finishes, the controller stops the guest, exports validated source, destroys the guest, and attempts locked dependency packaging in another guest. Normal completion can produce a broken game. Packaging does not fix it. A question in the final response receives no answer. [Full protocol](PROTOCOL.md).
 
@@ -115,7 +116,7 @@ Write your own `runs/<run-id>/review.md` using the included questions. Screensho
 ## Artifacts
 
 ```text
-runs/<UTC>--<agent>--<model-slug>--<random-64-bit-suffix>/
+runs/<agent>-<model-slug>-YYYY-MM-DD/
   prompt.md                 exact prompt snapshot
   task.toml                 exact task contract snapshot
   settings.json             non-secret input settings
@@ -127,6 +128,13 @@ runs/<UTC>--<agent>--<model-slug>--<random-64-bit-suffix>/
   review.md                 manual review template
   media/
 ```
+
+The date is UTC. For example: `codex-gpt-6-astra-2026-09-24`. Model slugs are
+lowercase, use single hyphens between alphanumeric segments, and are capped at
+64 characters with trailing hyphens removed. There are no double hyphens or
+random suffixes. An existing directory with the same name is never overwritten;
+another attempt with that agent/model slug on the same UTC date is rejected,
+including smoke tasks and retries.
 
 Solutions are independent Cargo projects, not members of a repository-wide workspace. `solution/` is made read-only and checked against its inventory before playback. Git does not preserve read-only permissions, so checksum verification remains necessary after a clone. Empty directories are preserved in local exports/replay but Git itself does not track empty directories.
 
