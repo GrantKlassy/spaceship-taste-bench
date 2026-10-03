@@ -2,7 +2,7 @@
 schema_version = 1
 backend = "sbx"
 sbx = "sbx"
-environment = "linux-rust-v2"
+environment = "linux-rust-v3"
 # Use "docker-pilot" for the accepted Docker sandbox boundary; see docs/PILOT.md.
 mode = "strict"
 

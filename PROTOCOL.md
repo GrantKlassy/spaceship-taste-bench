@@ -11,7 +11,7 @@ image identities, mount/socket checks, explicit network rules, exact prompt
 delivery, immutable exports and cleanup still apply. Replay must use the same
 mode and does not claim the strict credential-free service boundary.
 Generation records the selected agent's observed Docker network defaults plus
-crates.io. Codex's existing accepted-limitations records remain unchanged.
+crates.io.
 See [PILOT.md](docs/PILOT.md) for the executable workflow.
 
 The isolation and certification requirements below describe strict mode. The
@@ -30,7 +30,7 @@ No parent `.git`, instructions, starter game, earlier solution, review, transcri
 
 ## The request
 
-Generation requires a new externally isolated guest and a new agent session. A reused clean image is permitted; a reused writable guest is not. CLI versions are checked before task delivery. The model argument is passed exactly as selected; there is no fallback model or harness retry. Reported model identity is recorded only when the native stream supplies it. A provider can still reject an identifier; unavailable identity is null.
+Generation requires a new externally isolated guest and a new agent session. A reused clean image is permitted; a reused writable guest is not. CLI versions are pinned per environment, checked against the reviewed lock, and verified before task delivery. V1/v2 retain Claude Code 2.1.278; v3 selects 2.1.280. The model argument is passed exactly as selected; there is no fallback model or harness retry. Reported model identity is recorded only when the native stream supplies it. A provider can still reject an identifier; unavailable identity is null.
 
 The task is written once to stdin, then stdin is closed. The agent can edit, execute commands, compile, test, and revise during its natural tool loop inside the VM. The controller imposes no wall-clock, token, or cost deadline. It does not send follow-up messages, repair prompts, clarification answers, automatic resumes, or a second request. Provider/CLI internal transport recovery is part of that CLI's behavior, not an additional harness attempt.
 
@@ -68,6 +68,6 @@ Cleanup guards cover partially created guests and normal error unwinding. Ctrl-C
 
 Locked vendoring is attempted in a different disposable agent-free VM. Only crates.io lockfile sources are accepted; Git/custom-registry dependencies and escaping paths are rejected. `cargo vendor --locked --versioned-dirs /replay/vendor` must leave the source tree and lockfile unchanged. Packaging sets `CARGO_NET_OFFLINE=false` for registry access even when a submission defaults to offline mode; playback remains frozen and offline. Cargo's printed source configuration remains separate from the original submission. Failure is recorded without repair.
 
-The local bundle is outside Git history and has a checksum, environment identity and source-tree binding in `replay.json`. Play verifies these before importing anything. The replay VM receives the original source, preserved dependencies, and runtime; no agent or credentials, and no networking. It builds with frozen/offline resolution in a real UTF-8/256-color PTY at the dimensions recorded in the archived task contract. Both host and guest PTY dimensions are checked.
+The local bundle is outside Git history and has a checksum, environment identity and source-tree binding in `replay.json`. Play selects the archived environment and verifies these before importing anything. The replay VM receives the original source, preserved dependencies, and runtime; no agent or credentials, and no networking. It builds with frozen/offline resolution in a real UTF-8/256-color PTY at the dimensions recorded in the archived task contract. Both host and guest PTY dimensions are checked.
 
 A person writes `review.md`. There is no automatic subjective assessment. One result does not establish a general ranking of models or tools.

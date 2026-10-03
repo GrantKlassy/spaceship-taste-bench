@@ -10,6 +10,7 @@ Select it once in ignored `bench.local.toml`:
 
 ```toml
 mode = "docker-pilot"
+environment = "linux-rust-v3"
 ```
 
 Other settings retain their defaults. `--mode docker-pilot` or `--mode strict`
@@ -43,30 +44,37 @@ OpenAI distinguishes [subscription login from API-key billing](https://learn.cha
 With an exact model ID, use the separate small smoke task before the game:
 
 ```sh
-bench run --agent codex --model '<exact-model-id>' --task smoke-v1
+bench run --agent codex --model '<exact-model-id>' --task smoke-v2
 bench play '<smoke-run-id>'
 ```
 
-For Opus 5 with the frozen `linux-rust-v2` image:
+For Opus 5.5 with the frozen `linux-rust-v3` image:
 
 ```sh
-bench run --agent claude --model claude-opus-5 --task smoke-v1
+bench run --agent claude --model claude-opus-5-5 --task smoke-v2
 bench play '<smoke-run-id>'
-# Then the same frozen spaceship task used by the Codex runs:
-bench run --agent claude --model claude-opus-5
+# Then run spaceship-v2 with the game prompt:
+bench run --agent claude --model claude-opus-5-5
 ```
 
 Use the full model ID from [Claude's model configuration](https://code.claude.com/docs/en/model-config),
 not the moving `opus` alias, to preserve which release you requested. The native
 stream's reported model is archived separately. The harness does not set a fallback model.
-This image pins Claude Code 2.1.278. Opus 5.5 requires 2.1.280 or later; testing
-it requires a new environment and task version, rather than rebuilding v2.
+V3 pins Claude Code 2.1.280, the minimum version for Opus 5.5. V1/v2 retain
+Claude Code 2.1.278. Each environment has its own enforced CLI pins. The
+harness rejects an Opus 5.5 request on those older environments before allocation.
+`spaceship-v2` and `smoke-v2` select v3 and preserve the exact v1 prompt bytes.
+Playback and export recovery automatically select each run's archived environment.
+For an attempt using v2, use a separate config selecting
+`linux-rust-v2` and explicitly select `--task spaceship-v1` or `--task smoke-v1`.
 
 Smoke playback needs a 120-column by 40-row terminal. A successful smoke test generates
 and packages a tiny Rust program, then prints `bench smoke: 42` during playback.
-Its archive freezes only `smoke-v1`, leaving `spaceship-v1` editable. Once your
-game prompt is ready, use `bench run --agent codex --model '<exact-model-id>'`.
-The current `spaceship-v1` prompt and contract use 124 columns by 69 rows.
+Its archive freezes only `smoke-v2`. The first game attempt freezes
+`spaceship-v2`; edit its prompt before then, or create a new task version for
+changes after that. To run the same game prompt with Codex, use
+`bench run --agent codex --model '<exact-model-id>'`.
+Both spaceship task versions use 124 columns by 69 rows.
 Playback always uses each run's archived contract dimensions.
 
 Pilot records use protocol `single-attempt-docker-pilot-v1`, `mode: docker-pilot`,

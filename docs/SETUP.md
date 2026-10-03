@@ -1,6 +1,6 @@
 # Local setup
 
-The development machine has the required toolchain and images. **Codex and Claude subscription sign-in and real pilot smoke tests through offline replay now pass.** The Claude smoke requested and reported `claude-opus-5`. Follow [PILOT.md](PILOT.md) on another host. Strict attempts remain blocked by their backend isolation requirements. See [VERIFICATION.md](VERIFICATION.md) for the evidence and accepted pilot limitations.
+The development machine has the required toolchain and images. The default `linux-rust-v3` environment pins Claude Code 2.1.280 and Codex 0.155.1. Follow [PILOT.md](PILOT.md) for subscription authentication, readiness checks and the first smoke task. Strict attempts remain blocked by their backend isolation requirements. See [VERIFICATION.md](VERIFICATION.md) for harness and environment checks and accepted pilot limitations.
 
 ## Current machine
 
@@ -11,7 +11,7 @@ Checked again on 2026-09-22:
 - Working `docker`/`kvm` group access; KVM API 12; Docker sign-in and deny-all baseline initialized by the user.
 - All 13 sbx diagnostics have passed. Some checks return 12 passes and an optional update-lookup warning; the installed CLI remains 0.45.0. Base, Claude 2.1.278 and Codex 0.155.1 images are built, loaded and recorded in `environment.lock.json`.
 - Real guest creation, trusted file copying, stopped export, dependency connectivity, 120×40 PTY/Ctrl-C and clean-VM fixture replay work.
-- SSH forwarding was disabled during the 2026-09-22 maintenance pass after verifying there were no existing sandboxes. Fresh shell, Claude and Codex guests have no SSH-agent socket. MCP services and unrelated provider bindings remain attached; strict mode rejects them and the accepted pilot records them. The user completed broker OAuth, and the pilot smoke test succeeded without copying a normal agent home.
+- SSH forwarding was disabled during the 2026-09-22 maintenance pass after verifying there were no existing sandboxes. Fresh shell, Claude and Codex guests have no SSH-agent socket. MCP services and unrelated provider bindings remain attached; strict mode rejects them and the accepted pilot records them. Broker authentication does not copy a normal agent home.
 
 ## Prerequisites on another machine
 
@@ -49,24 +49,24 @@ Host Python 3 is needed for image preparation and the opt-in PTY diagnostic driv
 Before an environment is first resolved:
 
 ```sh
-python3 environments/linux-rust-v2/prepare.py
+python3 environments/linux-rust-v3/prepare.py
 ```
 
-The v2 script supplies only the three reviewed Dockerfiles as build context. It checks the exact v1 predecessor image IDs, reuses their packages and base layers, corrects Claude home-directory ownership and agent flavor labels, and verifies fresh built-in runtime startup before recording the new lock. It never supplies the repository, runs, home, credentials or instructions. Both agents inherit the same Linux/Rust/native terminal toolchain and neutral `/workspace`; no crate choice, game architecture or starter source is included.
+The v3 script supplies only the three reviewed Dockerfiles as build context. It checks the exact v2 predecessor image IDs, reuses their packages and base layers, verifies the pinned Claude npm integrity, upgrades Claude Code to 2.1.280, and verifies fresh built-in runtime startup before recording the new lock. Codex stays on 0.155.1. Claude home-directory ownership and agent flavor labels remain correct. It never supplies the repository, runs, home, credentials or instructions. Both agents inherit the same Linux/Rust/native terminal toolchain and neutral `/workspace`; no crate choice, game architecture or starter source is included.
 
 Base/index/platform digests and agent package pins were resolved from public registries. Native OS packages are resolved during the first trusted build; `/opt/bench/native-packages.tsv` records their exact versions. The complete built image identity then freezes that environment. Initial package resolution is not claimed reproducible. Docker 29's image IDs can identify OCI indexes rather than image configurations; the lock records actual returned identities.
 
-**This checkout is already resolved.** Its local image archives are in ignored `environments/linux-rust-v2/build/`. To use those exact images on another compatible host, transfer the preserved archives outside Git and load them:
+**This checkout is already resolved.** Its local image archives are in ignored `environments/linux-rust-v3/build/`. To use those exact images on another compatible host, transfer the preserved archives outside Git and load them:
 
 ```sh
-sbx template load environments/linux-rust-v2/build/base.tar
-sbx template load environments/linux-rust-v2/build/claude.tar
-sbx template load environments/linux-rust-v2/build/codex.tar
+sbx template load environments/linux-rust-v3/build/base.tar
+sbx template load environments/linux-rust-v3/build/claude.tar
+sbx template load environments/linux-rust-v3/build/codex.tar
 ```
 
-No image/artifact has been uploaded. Preparation refuses an already resolved environment or a checkout with archived attempts. Intentional tool updates require a new environment version and supported contract in the harness; preserve old image archives for old attempts. Do not delete lock identities to pretend a rebuild is the historical environment.
+No image/artifact has been uploaded. Preparation refuses an already resolved environment or one referenced by an archived attempt. Archives using older environments do not block preparation of a new version. Intentional tool updates require a new environment version, reviewed CLI pins in the harness and new task contracts selecting that environment; preserve old image archives for old attempts. Do not delete lock identities to pretend a rebuild is the historical environment.
 
-Copy `bench.example.toml` to ignored `bench.local.toml` to adjust machine-protection limits. These are CPU, memory, disk, export/replay and log safety settings, never benchmark time/token/cost budgets. `disk_mib` covers the root disk plus writable runtime volumes. Claude reserves 4096 MiB for its five runtime volumes and requires at least 6144 MiB total; the default 20480 MiB gives it a 16384 MiB root disk. Codex and shell guests use the full allocation for their root disk.
+The default environment is v3 and the default task is `spaceship-v2`. Playback and recovery select the environment archived with the run. Copy `bench.example.toml` to ignored `bench.local.toml` to adjust machine-protection limits. These are CPU, memory, disk, export/replay and log safety settings, never benchmark time/token/cost budgets. `disk_mib` covers the root disk plus writable runtime volumes. Claude reserves 4096 MiB for its five runtime volumes and requires at least 6144 MiB total; the default 20480 MiB gives it a 16384 MiB root disk. Codex and shell guests use the full allocation for their root disk.
 
 ## Authentication
 

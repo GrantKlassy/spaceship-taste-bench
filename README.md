@@ -2,9 +2,9 @@
 
 A chronological showcase of individual coding-agent attempts. Each agent gets the same frozen prompt, creates a Rust terminal spaceship game, and leaves an unedited submission. A person plays it and writes a subjective review. There are no scores, evaluator models, rankings, repeated-trial machinery, or generated reviews.
 
-**Status: Codex and Claude Code subscription pilots pass real smoke requests, source export, locked dependency packaging and offline replay.** Claude's smoke test requested and reported `claude-opus-5`; the frozen v2 image supports this Opus release. Run `bench auth claude` and `bench doctor --agent claude` before your first Claude attempt. The pilot records the accepted gateway/configuration/storage limitations; strict attempts remain blocked by certification requirements. Docker Sandboxes `sbx` 0.45.0 is the sole backend. See the [pilot workflow](docs/PILOT.md) and [verification status](docs/VERIFICATION.md).
+**Status: no runs recorded.** The harness supports Codex and Claude Code subscription attempts in Docker pilot mode. The pilot records the accepted gateway/configuration/storage limitations; strict attempts remain blocked by certification requirements. Docker Sandboxes `sbx` 0.45.0 is the sole backend. Follow the [pilot workflow](docs/PILOT.md) for authentication, readiness checks and the first smoke task. See [verification status](docs/VERIFICATION.md) for harness and environment checks.
 
-The development host is Ubuntu 24.04 under WSL2, x86-64, with Rust 1.97.0, Docker Engine 29.8.1, Buildx 0.37.1, `sbx` 0.45.0, KVM access, Docker sign-in and a deny-all baseline. The default environment is now `linux-rust-v2`: it preserves v1's packages and fixes Claude startup permissions and agent image flavor labels. The original v1 images remain preserved.
+The development host is Ubuntu 24.04 under WSL2, x86-64, with Rust 1.97.0, Docker Engine 29.8.1, Buildx 0.37.1, `sbx` 0.45.0, KVM access, Docker sign-in and a deny-all baseline. The default environment is `linux-rust-v3`: it preserves v2's Linux/Rust packages and Codex 0.155.1 runtime, and upgrades Claude Code to 2.1.280 for Opus 5.5. V1/v2 images remain preserved. The default task is `spaceship-v2`, whose prompt is byte-for-byte identical to `spaceship-v1`; its contract selects v3.
 
 ## Install and check
 
@@ -48,10 +48,10 @@ Follow [SETUP.md](docs/SETUP.md), then copy `bench.example.toml` to ignored `ben
 Prepare images without starting an attempt:
 
 ```sh
-python3 environments/linux-rust-v2/prepare.py
+python3 environments/linux-rust-v3/prepare.py
 ```
 
-This requires an independently installed Docker image builder and local `sbx` 0.45.0. It builds only trusted environment Dockerfiles from the preserved v1 images, loads their saved images into the sandbox store, and checks fresh built-in runtime startup/version before recording actual image IDs. It does not run a task, publish images, or authenticate. The lock now records the real amd64 images built on the development machine; their tar bundles remain local and ignored by Git. Both agent images inherit the same verified base layers. Preparation is refused after any archived attempt or after the environment has been resolved; transfer preserved image bundles to another machine, or prepare a new environment version.
+This requires an independently installed Docker image builder and local `sbx` 0.45.0. It builds only trusted environment Dockerfiles from the preserved v2 images, loads their saved images into the sandbox store, and checks fresh built-in runtime startup/version before recording actual image IDs. It does not run a task, publish images, or authenticate. The lock now records the real amd64 images built on the development machine; their tar bundles remain local and ignored by Git. Both agent images inherit the same verified base layers. Preparation is refused after an attempt using that environment or after its image identities have been resolved; transfer preserved image bundles to another machine, or prepare a new environment version.
 
 The requested authentication commands are:
 
@@ -66,21 +66,21 @@ bench auth claude
 
 Follow [PILOT.md](docs/PILOT.md). Select `mode = "docker-pilot"` in ignored
 `bench.local.toml`, authenticate with `bench auth codex`, and check readiness with
-`bench doctor --agent codex`. The separate `smoke-v1` task can exercise a real request and replay
+`bench doctor --agent codex`. The separate `smoke-v2` task can exercise a real request and replay
 without freezing your game prompt. Pilot records explicitly state their accepted
 limitations and never claim strict isolation certification.
 
-For an Opus attempt, use `bench auth claude`, then `bench doctor --agent claude`
-and `bench run --agent claude --model claude-opus-5 --task smoke-v1`.
-After the smoke test, omit `--task smoke-v1` to use the frozen spaceship prompt.
+For an Opus 5.5 attempt, use `bench auth claude`, then `bench doctor --agent claude`
+and `bench run --agent claude --model claude-opus-5-5 --task smoke-v2`.
+After the smoke test, omit `--task smoke-v2` to use the spaceship prompt.
 
 ## Strict attempts, once certification is complete
 
-You may edit `tasks/spaceship-v1/prompt.md` before its first allocated attempt. Its bytes, including the final newline, are delivered exactly once through stdin. The task contract is frozen too. Once there is an archived attempt, make a new version for changes:
+The spaceship prompts and task contracts can be edited before their first attempt. Allocation freezes the selected task version. Prompt bytes, including the final newline, are delivered exactly once through stdin. Once frozen, make a new version for changes:
 
 ```sh
-cp -r tasks/spaceship-v1 tasks/spaceship-v2
-# Edit spaceship-v2/prompt.md and change version in spaceship-v2/task.toml.
+cp -r tasks/spaceship-v2 tasks/spaceship-v3
+# Edit spaceship-v3/prompt.md and change version in spaceship-v3/task.toml.
 ```
 
 In strict mode, after the blockers in [VERIFICATION.md](docs/VERIFICATION.md) are resolved:
@@ -89,7 +89,7 @@ In strict mode, after the blockers in [VERIFICATION.md](docs/VERIFICATION.md) ar
 bench run --agent claude --model '<exact-model-id>'
 bench run --agent codex --model '<exact-model-id>'
 # Optional alternative prompt version:
-bench run --agent codex --model '<exact-model-id>' --task spaceship-v2
+bench run --agent codex --model '<exact-model-id>' --task spaceship-v3
 ```
 
 Strict-mode commands currently fail **before prompt delivery**. The separate Docker pilot changes the recorded protocol rather than certifying strict isolation. There is no host/container fallback. Failed prerequisite checks are not attempts. A failure after allocation retains a distinct run directory; an explicitly started retry gets a new ID.
@@ -98,17 +98,17 @@ Once a task finishes, the controller stops the guest, exports validated source, 
 
 Source exports allow up to 512 MiB, including dependencies bundled by the agent. If an export fails, its stopped snapshot and `export-error.log` remain in private state for diagnosis; cleanup still removes the guest and temporary template.
 
-After correcting an export problem, recover the same stopped snapshot with `bench recover '<run-id>'`. This makes no model request and preserves the previous run metadata and snapshot checksum in `export-recovery.json`. It refuses to overwrite an existing solution and prepares locked dependencies from the recovered source.
+Recovery also selects the archived environment. After correcting an export problem, recover the same stopped snapshot with `bench recover '<run-id>'`. This makes no model request and preserves the previous run metadata and snapshot checksum in `export-recovery.json`. It refuses to overwrite an existing solution and prepares locked dependencies from the recovered source.
 
 ## Play and review
 
-With a prepared replay bundle, resize your actual terminal to the dimensions in the run's archived `task.toml` (**124 columns × 69 rows** for `spaceship-v1`, 120×40 for `smoke-v1`), then:
+With a prepared replay bundle, resize your actual terminal to the dimensions in the run's archived `task.toml` (**124 columns × 69 rows** for both spaceship task versions, 120×40 for both smoke task versions), then:
 
 ```sh
 bench play '<run-id>'
 ```
 
-The play controller verifies hashes, requests a fresh shell guest, checks the selected boundary, supplies source and vendored dependencies separately, verifies the PTY size, and runs `cargo --config /replay/config.toml run --release --frozen`. Strict playback remains blocked by backend-injected services. Pilot playback accepts and records those services while enforcing guest deny-all networking and frozen dependencies. A `TERM` value alone is not accepted as evidence of dimensions.
+The play controller selects the archived environment and verifies hashes, requests a fresh shell guest, checks the selected boundary, supplies source and vendored dependencies separately, verifies the PTY size, and runs `cargo --config /replay/config.toml run --release --frozen`. Strict playback remains blocked by backend-injected services. Pilot playback accepts and records those services while enforcing guest deny-all networking and frozen dependencies. A `TERM` value alone is not accepted as evidence of dimensions.
 
 Write your own `runs/<run-id>/review.md` using the included questions. Screenshots and clips go in `media/`; large media are ignored by default. Build/launch status is operational information, not a game-quality score.
 

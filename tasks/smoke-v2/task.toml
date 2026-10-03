@@ -1,0 +1,11 @@
+schema_version = 1
+version = "smoke-v2"
+environment = "linux-rust-v3"
+launch = ["cargo", "run", "--release", "--locked"]
+play_launch = ["cargo", "run", "--release", "--frozen"]
+workspace = "/workspace"
+columns = 120
+rows = 40
+term = "xterm-256color"
+locale = "C.UTF-8"
+dependencies = "crates.io-only"

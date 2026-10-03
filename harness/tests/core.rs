@@ -66,7 +66,7 @@ fn arguments_require_model_and_reject_traversal_or_shell_syntax() {
     ])
     .unwrap();
     assert!(
-        matches!(cli.command, bench::config::Commands::Run { task, .. } if task == "spaceship-v1")
+        matches!(cli.command, bench::config::Commands::Run { task, .. } if task == "spaceship-v2")
     );
 }
 #[test]
@@ -536,4 +536,54 @@ fn opaque_whiteouts_do_not_delete_new_entries_when_listed_last() {
     archive::extract_image_workspace(&path, "workspace", &dest, 100000, 1000, 100).unwrap();
     assert!(dest.join("assets/new").is_file());
     assert!(!dest.join("assets/old").exists());
+}
+
+#[test]
+fn environment_versions_preserve_historical_pins_and_reject_unknown_versions() {
+    for environment in ["linux-rust-v1", "linux-rust-v2"] {
+        assert_eq!(
+            Agent::Claude.pinned_version(environment).unwrap(),
+            "2.1.278"
+        );
+        assert_eq!(Agent::Codex.pinned_version(environment).unwrap(), "0.155.1");
+    }
+    assert_eq!(
+        Agent::Claude.pinned_version("linux-rust-v3").unwrap(),
+        "2.1.280"
+    );
+    assert_eq!(
+        Agent::Codex.pinned_version("linux-rust-v3").unwrap(),
+        "0.155.1"
+    );
+    assert!(Agent::Claude.pinned_version("linux-rust-v99").is_err());
+    assert!(
+        Agent::Claude
+            .validate_model_environment("claude-opus-5-5", "linux-rust-v2")
+            .is_err()
+    );
+    Agent::Claude
+        .validate_model_environment("claude-opus-5-5", "linux-rust-v3")
+        .unwrap();
+    Agent::Claude
+        .validate_model_environment("claude-opus-5", "linux-rust-v2")
+        .unwrap();
+}
+
+#[test]
+fn new_tasks_preserve_exact_prompts_and_change_only_version_and_environment() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    for stem in ["smoke", "spaceship"] {
+        let old = Task::load(root, &format!("{stem}-v1")).unwrap();
+        let new = Task::load(root, &format!("{stem}-v2")).unwrap();
+        assert_eq!(old.prompt, new.prompt);
+        assert_eq!(new.contract.environment, "linux-rust-v3");
+        assert_eq!(
+            String::from_utf8(old.contract_bytes)
+                .unwrap()
+                .replace(&format!("{stem}-v1"), &format!("{stem}-v2"))
+                .replace("linux-rust-v2", "linux-rust-v3")
+                .as_bytes(),
+            new.contract_bytes
+        );
+    }
 }

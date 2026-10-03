@@ -1,3 +1,4 @@
+use anyhow::{Result, bail};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -18,17 +19,29 @@ impl fmt::Display for Agent {
     }
 }
 impl Agent {
-    pub fn pinned_version(self) -> &'static str {
-        match self {
-            Self::Claude => "2.1.278",
-            Self::Codex => "0.155.1",
+    pub fn pinned_version(self, environment: &str) -> Result<&'static str> {
+        match (self, environment) {
+            (Self::Claude, "linux-rust-v1" | "linux-rust-v2") => Ok("2.1.278"),
+            (Self::Claude, "linux-rust-v3") => Ok("2.1.280"),
+            (Self::Codex, "linux-rust-v1" | "linux-rust-v2" | "linux-rust-v3") => Ok("0.155.1"),
+            _ => bail!("no reviewed agent version for environment {environment}"),
         }
     }
-    pub fn version_banner(self) -> String {
-        match self {
-            Self::Claude => format!("{} (Claude Code)", self.pinned_version()),
-            Self::Codex => format!("codex-cli {}", self.pinned_version()),
+    pub fn version_banner(self, environment: &str) -> Result<String> {
+        let version = self.pinned_version(environment)?;
+        Ok(match self {
+            Self::Claude => format!("{version} (Claude Code)"),
+            Self::Codex => format!("codex-cli {version}"),
+        })
+    }
+    pub fn validate_model_environment(self, model: &str, environment: &str) -> Result<()> {
+        let version = self.pinned_version(environment)?;
+        if self == Self::Claude && model.starts_with("claude-opus-5-5") && version == "2.1.278" {
+            bail!(
+                "Opus 5.5 requires Claude Code 2.1.280 or newer; use linux-rust-v3 with --task spaceship-v2 or --task smoke-v2"
+            );
         }
+        Ok(())
     }
     /// Only ever passed to an externally isolated guest. Prompt bytes go to stdin.
     pub fn invocation(self, model: &str) -> Vec<String> {

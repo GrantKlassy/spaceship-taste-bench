@@ -134,7 +134,36 @@ pub struct EnvironmentLock {
     pub schema_version: u32,
     pub environment: String,
     pub rust_version: String,
+    pub backend_version: String,
+    pub agents: std::collections::BTreeMap<String, AgentPin>,
     pub images: std::collections::BTreeMap<String, Option<Image>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentPin {
+    pub version: String,
+}
+
+impl EnvironmentLock {
+    fn validate(&self, environment: &str) -> Result<()> {
+        ensure!(
+            self.schema_version == 1
+                && self.environment == environment
+                && self.rust_version == "1.97.0"
+                && self.backend_version == BACKEND_VERSION,
+            "environment lock mismatch"
+        );
+        for agent in [Agent::Claude, Agent::Codex] {
+            ensure!(
+                self.agents
+                    .get(&agent.to_string())
+                    .map(|pin| pin.version.as_str())
+                    == Some(agent.pinned_version(environment)?),
+                "environment lock differs from the reviewed {agent} CLI pin"
+            );
+        }
+        Ok(())
+    }
 }
 
 #[derive(Deserialize)]
@@ -291,12 +320,7 @@ impl Sbx {
                 .join("environment.lock.json"),
             1024 * 1024,
         )?)?;
-        ensure!(
-            lock.schema_version == 1
-                && lock.environment == config.environment
-                && lock.rust_version == "1.97.0",
-            "environment lock mismatch"
-        );
+        lock.validate(&config.environment)?;
         Ok(Self {
             config: config.clone(),
             lock,
@@ -552,7 +576,7 @@ impl Sbx {
                     &[agent.to_string(), "--version".into()],
                     false,
                 )?)?;
-                let expected = agent.version_banner();
+                let expected = agent.version_banner(&self.config.environment)?;
                 ensure!(
                     std::str::from_utf8(&output)?.trim() == expected,
                     "runtime CLI version mismatch"
@@ -561,7 +585,13 @@ impl Sbx {
                 let mut args = agent.invocation("bench-diagnostic-unused");
                 args.push("--help".into());
                 self.control(self.exec(&guest.name, &args, false)?)?;
-                report.push(&format!("{agent}_runtime"), Status::Pass, "Fresh built-in runtime starts, reports the pinned version and accepts the adapter flags.");
+                report.push(
+                    &format!("{agent}_runtime"),
+                    Status::Pass,
+                    format!(
+                        "Fresh built-in runtime reports {expected} and accepts the adapter flags."
+                    ),
+                );
                 if self.config.mode.is_pilot() {
                     self.configure_generation(&guest.name, agent)?;
                     report.push(&format!("{agent}_network"), Status::Pass, format!("Docker's pinned {agent} network defaults plus crates.io are configured; checked unrelated destinations remain denied. Docker-managed services are outside this guarantee."));
@@ -1556,6 +1586,19 @@ pub fn integration_check_abort(
 mod tests {
     use super::*;
     #[test]
+    fn environment_locks_retain_reviewed_versions_and_reject_pin_drift() {
+        for bytes in [
+            include_bytes!("../../environments/linux-rust-v1/environment.lock.json").as_slice(),
+            include_bytes!("../../environments/linux-rust-v2/environment.lock.json").as_slice(),
+            include_bytes!("../../environments/linux-rust-v3/environment.lock.json").as_slice(),
+        ] {
+            let mut lock: EnvironmentLock = serde_json::from_slice(bytes).unwrap();
+            lock.validate(&lock.environment).unwrap();
+            lock.agents.get_mut("claude").unwrap().version = "2.1.999".into();
+            assert!(lock.validate(&lock.environment).is_err());
+        }
+    }
+    #[test]
     fn failed_export_keeps_snapshot_and_private_diagnostic() {
         let raw = tempfile::tempdir().unwrap();
         let image = raw.path().join("stopped-image.tar");
@@ -1603,6 +1646,8 @@ mod tests {
                 schema_version: 1,
                 environment: "linux-rust-v2".into(),
                 rust_version: "1.97.0".into(),
+                backend_version: BACKEND_VERSION.into(),
+                agents: Default::default(),
                 images: Default::default(),
             },
             diagnostics: PathBuf::new(),

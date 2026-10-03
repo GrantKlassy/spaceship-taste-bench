@@ -44,7 +44,7 @@ pub enum Commands {
         agent: Agent,
         #[arg(long, value_parser = validate_model)]
         model: String,
-        #[arg(long, default_value = "spaceship-v1", value_parser = parse_component)]
+        #[arg(long, default_value = "spaceship-v2", value_parser = parse_component)]
         task: String,
     },
     /// Build and play an immutable submission in an offline guest.
@@ -206,7 +206,7 @@ impl Default for Config {
             schema_version: 1,
             backend: "sbx".into(),
             sbx: "sbx".into(),
-            environment: "linux-rust-v2".into(),
+            environment: "linux-rust-v3".into(),
             mode: ExecutionMode::Strict,
             limits: Limits::default(),
         }
@@ -290,5 +290,5 @@ pub fn state_dir(repo: &Path) -> Result<PathBuf> {
 
 /// Explicitly reviewed environment versions; arbitrary directories are rejected.
 pub fn supported_environment(value: &str) -> bool {
-    matches!(value, "linux-rust-v1" | "linux-rust-v2")
+    matches!(value, "linux-rust-v1" | "linux-rust-v2" | "linux-rust-v3")
 }

@@ -41,10 +41,9 @@ fn execute() -> Result<()> {
     if let Some(mode) = cli.mode {
         config.mode = mode;
     }
-    let backend = Sbx::new(&repo, &config)?;
     match cli.command {
         Commands::Doctor { agent, json } => {
-            let report = backend.doctor(agent);
+            let report = Sbx::new(&repo, &config)?.doctor(agent);
             if json {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
@@ -58,11 +57,13 @@ fn execute() -> Result<()> {
             );
             Ok(())
         }
-        Commands::Auth { agent } => backend.with_abort(process::signals()?).auth(agent),
+        Commands::Auth { agent } => Sbx::new(&repo, &config)?
+            .with_abort(process::signals()?)
+            .auth(agent),
         Commands::Run { agent, model, task } => {
             let state = state_dir(&repo)?;
             let abort = process::signals()?;
-            let backend = backend.with_abort(abort.clone());
+            let backend = Sbx::new(&repo, &config)?.with_abort(abort.clone());
             workflow::run(
                 &backend,
                 &config,
@@ -79,26 +80,29 @@ fn execute() -> Result<()> {
         }
         Commands::Play { run_id } => {
             let (dir, run) = protocol::load_run(&repo, &run_id)?;
+            config.environment = run.environment.environment.clone();
             let state = state_dir(&repo)?;
             let abort = process::signals()?;
-            let backend = backend.with_abort(abort.clone());
+            let backend = Sbx::new(&repo, &config)?.with_abort(abort.clone());
             replay::play(&backend, &config, &dir, &run, &state, &abort)
         }
         Commands::Recover { run_id } => {
+            let (_, run) = protocol::load_run_metadata(&repo, &run_id)?;
+            config.environment = run.environment.environment;
             let state = state_dir(&repo)?;
             let abort = process::signals()?;
-            let backend = backend.with_abort(abort.clone());
+            let backend = Sbx::new(&repo, &config)?.with_abort(abort.clone());
             workflow::recover(&backend, &config, &repo, &state, &run_id, &abort)
         }
         Commands::CheckIntegration => {
             let state = state_dir(&repo)?;
             let abort = process::signals()?;
-            let backend = backend.with_abort(abort.clone());
+            let backend = Sbx::new(&repo, &config)?.with_abort(abort.clone());
             bench::sandbox::integration_check_abort(&backend, &repo, &state, &abort)
         }
         Commands::CheckRuntimes { agent } => {
             let abort = process::signals()?;
-            let backend = backend.with_abort(abort);
+            let backend = Sbx::new(&repo, &config)?.with_abort(abort);
             let report = backend.check_runtimes(agent)?;
             for line in report.lines() {
                 println!("{line}");

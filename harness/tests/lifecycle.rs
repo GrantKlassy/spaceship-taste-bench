@@ -14,6 +14,7 @@ use std::{cell::RefCell, fs, path::Path, process::Command, sync::atomic::AtomicB
 struct Fake {
     calls: RefCell<Vec<String>>,
     fail: &'static str,
+    environment: &'static str,
 }
 impl Fake {
     fn note(&self, action: &str) -> Result<()> {
@@ -36,11 +37,11 @@ impl Sandbox for Fake {
         Ok(EnvironmentIdentity {
             backend: "unit-test-simulation".into(),
             backend_version: Some("fixture".into()),
-            environment: Config::default().environment,
+            environment: self.environment.into(),
             image_digest: Some(format!("sha256:{}", "a".repeat(64))),
             rust: Some("1.97.0".into()),
             architecture: Some("x86_64".into()),
-            effective_limits: Some(Config::default().limits),
+            effective_limits: Some(legacy_config().limits),
             network_policy: Some(json!({"fixture": true})),
             isolation_verified: self.fail != "uncertified",
         })
@@ -51,7 +52,11 @@ impl Sandbox for Fake {
         let text = if args == ["codex", "--version"] {
             "printf 'codex-cli 0.155.1\\n'"
         } else if args == ["claude", "--version"] {
-            "printf '2.1.278 (Claude Code)\\n'"
+            if self.environment == "linux-rust-v3" && self.fail != "old_cli" {
+                "printf '2.1.280 (Claude Code)\\n'"
+            } else {
+                "printf '2.1.278 (Claude Code)\\n'"
+            }
         } else if args.first().map(String::as_str) == Some("git") {
             "true"
         } else if args.first().map(String::as_str) == Some("claude") {
@@ -81,6 +86,12 @@ impl Sandbox for Fake {
         self.note("destroy")
     }
 }
+fn legacy_config() -> Config {
+    Config {
+        environment: "linux-rust-v2".into(),
+        ..Config::default()
+    }
+}
 fn setup() -> (tempfile::TempDir, tempfile::TempDir) {
     let repo = tempfile::tempdir().unwrap();
     fs::create_dir_all(repo.path().join("tasks/spaceship-v1")).unwrap();
@@ -100,12 +111,23 @@ fn setup() -> (tempfile::TempDir, tempfile::TempDir) {
         include_bytes!("../../templates/review.md"),
     )
     .unwrap();
+    fs::create_dir_all(repo.path().join("tasks/spaceship-v2")).unwrap();
+    fs::write(
+        repo.path().join("tasks/spaceship-v2/prompt.md"),
+        include_bytes!("../../tasks/spaceship-v2/prompt.md"),
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("tasks/spaceship-v2/task.toml"),
+        include_bytes!("../../tasks/spaceship-v2/task.toml"),
+    )
+    .unwrap();
     (repo, tempfile::tempdir().unwrap())
 }
 fn execute(fake: &Fake, repo: &Path, state: &Path) -> Result<String> {
     workflow::run(
         fake,
-        &Config::default(),
+        &legacy_config(),
         repo,
         state,
         workflow::Attempt {
@@ -121,6 +143,7 @@ fn prerequisite_failure_creates_no_attempt_and_delivers_no_prompt() {
     let (repo, state) = setup();
     let fake = Fake {
         calls: RefCell::new(vec![]),
+        environment: "linux-rust-v2",
         fail: "preflight",
     };
     assert!(execute(&fake, repo.path(), state.path()).is_err());
@@ -133,11 +156,12 @@ fn pilot_archives_accepted_limits_without_claiming_strict_isolation() {
     let (repo, state) = setup();
     let fake = Fake {
         calls: RefCell::new(vec![]),
+        environment: "linux-rust-v2",
         fail: "uncertified",
     };
     let config = Config {
         mode: bench::config::ExecutionMode::DockerPilot,
-        ..Config::default()
+        ..legacy_config()
     };
     let id = workflow::run(
         &fake,
@@ -175,6 +199,7 @@ fn strict_workflow_still_rejects_uncertified_backend_before_prompt_delivery() {
     let (repo, state) = setup();
     let fake = Fake {
         calls: RefCell::new(vec![]),
+        environment: "linux-rust-v2",
         fail: "uncertified",
     };
     assert!(execute(&fake, repo.path(), state.path()).is_err());
@@ -186,11 +211,12 @@ fn pilot_runs_claude_and_archives_its_model_subscription_and_network_limitations
     let (repo, state) = setup();
     let fake = Fake {
         calls: RefCell::new(vec![]),
+        environment: "linux-rust-v2",
         fail: "uncertified",
     };
     let config = Config {
         mode: bench::config::ExecutionMode::DockerPilot,
-        ..Config::default()
+        ..legacy_config()
     };
     let id = workflow::run(
         &fake,
@@ -237,6 +263,7 @@ fn normal_agent_completion_and_broken_game_are_separate() {
     let (repo, state) = setup();
     let fake = Fake {
         calls: RefCell::new(vec![]),
+        environment: "linux-rust-v2",
         fail: "",
     };
     let id = execute(&fake, repo.path(), state.path()).unwrap();
@@ -270,6 +297,7 @@ fn archived_task_is_frozen_but_new_version_is_editable() {
     let (repo, state) = setup();
     let fake = Fake {
         calls: RefCell::new(vec![]),
+        environment: "linux-rust-v2",
         fail: "",
     };
     execute(&fake, repo.path(), state.path()).unwrap();
@@ -285,18 +313,18 @@ fn archived_task_is_frozen_but_new_version_is_editable() {
             .check_frozen(&task)
             .is_err()
     );
-    fs::create_dir(repo.path().join("tasks/spaceship-v2")).unwrap();
+    fs::create_dir(repo.path().join("tasks/spaceship-v3")).unwrap();
     fs::write(
-        repo.path().join("tasks/spaceship-v2/prompt.md"),
+        repo.path().join("tasks/spaceship-v3/prompt.md"),
         "new version\n",
     )
     .unwrap();
     fs::write(
-        repo.path().join("tasks/spaceship-v2/task.toml"),
-        include_str!("../../tasks/spaceship-v1/task.toml").replace("spaceship-v1", "spaceship-v2"),
+        repo.path().join("tasks/spaceship-v3/task.toml"),
+        include_str!("../../tasks/spaceship-v1/task.toml").replace("spaceship-v1", "spaceship-v3"),
     )
     .unwrap();
-    let task = Task::load(repo.path(), "spaceship-v2").unwrap();
+    let task = Task::load(repo.path(), "spaceship-v3").unwrap();
     RunStore::open(repo.path())
         .unwrap()
         .check_frozen(&task)
@@ -307,6 +335,7 @@ fn playback_dimensions_come_from_the_verified_archive() {
     let (repo, state) = setup();
     let fake = Fake {
         calls: RefCell::new(vec![]),
+        environment: "linux-rust-v2",
         fail: "",
     };
     let id = execute(&fake, repo.path(), state.path()).unwrap();
@@ -329,6 +358,7 @@ fn failures_destroy_guests_and_preserve_metadata() {
         let (repo, state) = setup();
         let fake = Fake {
             calls: RefCell::new(vec![]),
+            environment: "linux-rust-v2",
             fail: point,
         };
         let _ = execute(&fake, repo.path(), state.path());
@@ -355,6 +385,7 @@ fn stopped_snapshot_recovery_preserves_the_attempt_and_failure_history() {
     let (repo, state) = setup();
     let fake = Fake {
         calls: RefCell::new(vec![]),
+        environment: "linux-rust-v2",
         fail: "export",
     };
     let id = execute(&fake, repo.path(), state.path()).unwrap();
@@ -383,7 +414,7 @@ fn stopped_snapshot_recovery_preserves_the_attempt_and_failure_history() {
     fake.calls.borrow_mut().clear();
     workflow::recover(
         &fake,
-        &Config::default(),
+        &legacy_config(),
         repo.path(),
         state.path(),
         &id,
@@ -406,7 +437,7 @@ fn stopped_snapshot_recovery_preserves_the_attempt_and_failure_history() {
     assert!(
         workflow::recover(
             &fake,
-            &Config::default(),
+            &legacy_config(),
             repo.path(),
             state.path(),
             &id,
@@ -420,6 +451,7 @@ fn each_explicit_attempt_gets_new_id_and_no_previous_input() {
     let (repo, state) = setup();
     let fake = Fake {
         calls: RefCell::new(vec![]),
+        environment: "linux-rust-v2",
         fail: "",
     };
     let a = execute(&fake, repo.path(), state.path()).unwrap();
@@ -440,6 +472,7 @@ fn edited_archives_fail_checksum_verification() {
     let (repo, state) = setup();
     let fake = Fake {
         calls: RefCell::new(vec![]),
+        environment: "linux-rust-v2",
         fail: "",
     };
     let id = execute(&fake, repo.path(), state.path()).unwrap();
@@ -460,6 +493,7 @@ fn edited_archives_fail_checksum_verification() {
 fn partial_create_is_guarded_and_never_reused() {
     let fake = Fake {
         calls: RefCell::new(vec![]),
+        environment: "linux-rust-v2",
         fail: "create",
     };
     assert!(Guest::new(&fake, Role::Playback).is_err());
@@ -470,6 +504,7 @@ fn atomic_metadata_roundtrip_does_not_publish_raw_provider_text() {
     let (repo, state) = setup();
     let fake = Fake {
         calls: RefCell::new(vec![]),
+        environment: "linux-rust-v2",
         fail: "",
     };
     let id = execute(&fake, repo.path(), state.path()).unwrap();
@@ -482,4 +517,80 @@ fn atomic_metadata_roundtrip_does_not_publish_raw_provider_text() {
     assert!(!text.contains(repo.path().to_str().unwrap()));
     assert!(!text.contains(state.path().to_str().unwrap()));
     assert!(text.contains("\"cost_usd\": null"));
+}
+
+#[test]
+fn opus_55_is_rejected_on_old_environment_before_any_backend_operation() {
+    let (repo, state) = setup();
+    let fake = Fake {
+        calls: RefCell::new(vec![]),
+        fail: "",
+        environment: "linux-rust-v2",
+    };
+    let error = workflow::run(
+        &fake,
+        &legacy_config(),
+        repo.path(),
+        state.path(),
+        workflow::Attempt {
+            agent: Agent::Claude,
+            model: "claude-opus-5-5",
+            task_version: "spaceship-v1",
+        },
+        &AtomicBool::new(false),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("2.1.280"));
+    assert!(fake.calls.borrow().is_empty());
+    assert!(!repo.path().join("runs").exists());
+}
+
+#[test]
+fn v3_records_new_claude_pin_and_refuses_an_old_runtime_before_delivery() {
+    for fail in ["", "old_cli"] {
+        let (repo, state) = setup();
+        let fake = Fake {
+            calls: RefCell::new(vec![]),
+            fail,
+            environment: "linux-rust-v3",
+        };
+        let result = workflow::run(
+            &fake,
+            &Config::default(),
+            repo.path(),
+            state.path(),
+            workflow::Attempt {
+                agent: Agent::Claude,
+                model: "claude-opus-5-5",
+                task_version: "spaceship-v2",
+            },
+            &AtomicBool::new(false),
+        );
+        if fail.is_empty() {
+            let (_, run) = bench::protocol::load_run(repo.path(), &result.unwrap()).unwrap();
+            assert_eq!(run.agent.cli_version.as_deref(), Some("2.1.280"));
+            assert_eq!(run.environment.environment, "linux-rust-v3");
+            assert_eq!(run.agent.requested_model, "claude-opus-5-5");
+            assert_eq!(run.outcome.completion, Completion::Normal);
+        } else {
+            assert!(result.unwrap_err().to_string().contains("environment pin"));
+            let dir = fs::read_dir(repo.path().join("runs"))
+                .unwrap()
+                .map(|e| e.unwrap().path())
+                .find(|p| p.is_dir())
+                .unwrap();
+            let run: Run =
+                serde_json::from_slice(&fs::read(dir.join("run.json")).unwrap()).unwrap();
+            assert!(run.started_at.is_none());
+            assert_eq!(run.outcome.completion, Completion::InfrastructureFailure);
+            assert!(
+                !state
+                    .path()
+                    .join("raw")
+                    .join(run.run_id)
+                    .join("stdout.jsonl")
+                    .exists()
+            );
+        }
+    }
 }

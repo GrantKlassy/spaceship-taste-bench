@@ -131,6 +131,7 @@ pub fn run<B: Sandbox>(
         task_version,
     } = attempt;
     crate::config::validate_model(model).map_err(anyhow::Error::msg)?;
+    agent.validate_model_environment(model, &config.environment)?;
     let task = Task::load(repo, task_version)?;
     ensure!(
         task.contract.environment == config.environment,
@@ -255,10 +256,10 @@ pub fn run<B: Sandbox>(
         )?;
         let version = std::str::from_utf8(&version)?.trim();
         ensure!(
-            version == agent.version_banner(),
+            version == agent.version_banner(&config.environment)?,
             "executed agent version differs from environment pin"
         );
-        run.agent.cli_version = Some(agent.pinned_version().into());
+        run.agent.cli_version = Some(agent.pinned_version(&config.environment)?.into());
         // Git is initialized inside a new /workspace; never transfer parent .git.
         process::control_logged_abort(
             backend.exec(
