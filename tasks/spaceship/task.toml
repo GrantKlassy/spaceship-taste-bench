@@ -1,6 +1,6 @@
 schema_version = 1
-version = "spaceship-v1"
-environment = "linux-rust-v2"
+name = "spaceship"
+environment = "linux-rust"
 launch = ["cargo", "run", "--release", "--locked"]
 play_launch = ["cargo", "run", "--release", "--frozen"]
 workspace = "/workspace"

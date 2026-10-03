@@ -6,8 +6,8 @@ No benchmark attempts are recorded. This document covers harness and environment
 
 - Installed `bench` on PATH. Rust 1.97.0, Docker Engine 29.8.1, Buildx 0.37.1 and local `sbx` 0.45.0 are available. Backend diagnostics passed all 13 checks during inspection; later checks sometimes report an optional update-lookup warning. No backend upgrade was performed.
 - Disabled `ssh.agentForwardingEnabled` with the supported setting and restarted the daemon after checking that there were no sandboxes. Fresh shell, Claude and Codex guests have **no SSH-agent socket**. `SSH_AUTH_SOCK` can still be present as an inert variable; its name alone is not evidence of forwarding. Clipboard image paste and Claude remote control are disabled too. Harness commands inspect these settings without changing them.
-- Built and loaded `linux-rust-v2`, preserving the exact v1 toolchain/package layers. Claude's built-in runtime failed when its settings directory was not pre-created with agent ownership. The v2 image creates that empty directory with the correct owner and both agent images have their correct flavor labels. Fresh Claude 2.1.278 and Codex 0.155.1 runtimes now start and report their pinned versions. Original v1 images and archives remain preserved.
-- Image preparation now checks candidate startup/version inside a real microVM before publishing a resolved environment lock. It verifies each predecessor's image identity and common base layers, and never compiles a submission on the host.
+- Built and loaded `linux-rust` with Claude Code 2.1.280 and Codex 0.155.1. Claude's empty settings directory has agent ownership, and both agent images have their correct flavor labels.
+- Image preparation checks candidate startup/version inside a real microVM before recording the lock and verifies common base layers. The current Dockerfiles build from pinned upstream images without older local environment dependencies.
 - Added `bench check-runtimes [--agent claude|codex]`: fixed inspection, version and help probes only. Both actual built-in runtimes are tested independently of the agent-free replay fixture. Successful CLI startup does not certify managed configuration or isolation.
 - Replaced the CLI's unconditional `doctor` error with a structured readiness report. `bench doctor --agent codex --json` checks the evaluated settings, actual local image store and account prerequisites. Unknown or failed queries remain blocked; account values are not printed or logged. Source-defined unresolved backend requirements remain blocking.
 - Added a registry fixture pinned to `itoa` 1.0.15. Its lockfile was generated in a guest. Live checks exercised real `cargo vendor --locked`, verified unchanged source/lockfile hashes, exported the separate vendor bundle from a stopped VM, and built/ran the preserved project with `--frozen` in a third clean VM under deny-all. Actual 120×40 PTY dimensions, Ctrl-C forwarding and terminal restoration passed.
@@ -51,24 +51,38 @@ status instead. Long-lived token refresh remains unverified.
 
 ## Opus 5.5 environment, 2026-09-28
 
-`linux-rust-v3` is built and loaded. It inherits the preserved v2 Linux/Rust
-packages and Codex 0.155.1 runtime, and upgrades Claude Code to 2.1.280 with the
-npm package integrity recorded and checked during preparation. All three images
-passed startup/version checks in fresh microVMs and their actual image IDs are
-recorded in the v3 lock. V1/v2 retain their own image identities and CLI pins.
+`linux-rust` contains the verified Linux/Rust packages, Codex 0.155.1 and
+Claude Code 2.1.280. All three images passed startup/version checks in fresh
+microVMs and their actual image IDs are recorded in the lock. The npm package
+integrity is recorded for each agent and checked during preparation.
 
-The harness now enforces reviewed CLI pins per environment and validates the
-lock against them. Opus 5.5 requests on the older CLI are rejected before task
-allocation. `spaceship-v2` and `smoke-v2` have byte-identical prompts to v1 and
-select v3 in their contracts. Playback/recovery select the environment archived
-with the run. Preparation permits older-environment archives but refuses resolved images,
-archives using the target environment, and malformed archive metadata.
+The harness enforces reviewed CLI pins and validates the environment lock
+against them. `spaceship` and `smoke` retain their original prompt bytes.
+Playback and recovery load the environment lock archived with each run.
 
-`bench doctor --agent claude --json` reports `ready: true` on v3, including
-Claude Code 2.1.280, subscription reuse, provider network policy, resources and
-replacement-volume freshness. Formatting, Clippy with `-D warnings`, and all
-84 ordinary Rust tests pass; seven opt-in backend tests remain ignored in that
-suite. The updated harness is installed on PATH.
+The earlier `bench doctor --agent claude --json` check reported `ready: true`,
+including Claude Code 2.1.280, subscription reuse, provider network policy,
+resources and replacement-volume freshness.
+
+## Canonical names and input snapshots, 2026-10-02
+
+The repository keeps one `linux-rust` environment and two tasks, `spaceship`
+and `smoke`. Their contents are updated in place. Current image contents and
+IDs are retained under the canonical tags; obsolete task/environment copies,
+predecessor-image dependencies and CLI compatibility branches are removed.
+
+Each attempt still snapshots and hashes its exact inputs. Tests cover changing
+the current prompt, contract and environment lock without changing an older
+run, and rejecting tampered archived inputs. Playback and recovery select the
+archived lock. Git preserves source history; numbered directory copies are
+not part of the workflow.
+
+All 86 ordinary Rust tests and three image-preparation tests pass, along with
+formatting, Clippy with `-D warnings`, and Docker build checks for all three
+Dockerfiles. Fresh base, Claude and Codex guests pass startup/version checks
+under the canonical image tags, with unchanged image IDs. The old local image
+tags and bundles are removed, and the updated harness is installed on PATH.
+No task was allocated or model request made by these checks.
 
 ## Remaining strict-mode certification work
 
@@ -101,16 +115,17 @@ Raw administrative output remains in private state under bounded `backend/` dire
 
 ## Local results
 
-- Ordinary Rust suite: **84 passed**, seven opt-in tests ignored by default. Tests include Claude lifecycle/model/subscription metadata, rejection of API billing or missing broker evidence, separate provider network policies, archived playback dimensions, terminal restoration, snapshot retention and recovery without another model request.
+- Ordinary Rust suite: **86 passed**, seven opt-in tests ignored by default. Tests include Claude lifecycle/model/subscription metadata, rejection of API billing or missing broker evidence, separate provider network policies, archived playback dimensions, terminal restoration, snapshot retention and recovery without another model request.
 - Formatting and Clippy with `-D warnings`: passed.
+- Image preparation: three Python tests passed, covering explicit rebuilds, current base/package pins, minimal build contexts, and preservation of existing bundles and lock on failed runtime verification.
 - Docker pilot `bench check-integration`: passed, including generation policy transitions, production package/playback verification, real registry download/vendoring, stopped source/package export, 120×40 PTY/Ctrl-C, fresh-VM frozen replay and guest cleanup. No model request or task allocation was used.
 - Fresh pilot Codex runtime: pinned CLI/adapter flags, resources, absent SSH socket, effective native network rules plus crates.io, OAuth mode and placeholder credentials all passed. `bench doctor --agent codex --json` reports `ready: true`. Managed configuration/services are recorded pilot warnings. The built-in Codex kit contributes an immutable grouped network allowance; the pilot preserves and validates those destinations, rather than attempting to remove that rule.
 - Fresh pilot Claude runtime and subscription checks: passed, including replacement storage; `bench doctor --agent claude --json` reports `ready: true`.
-- Fresh v2 Claude/Codex startup, pinned versions, adapter flags, CPU/memory/disk limits and Claude volume freshness: passed. Full runtime checks still fail the configuration/service requirements above.
+- Fresh Claude/Codex startup, pinned versions, adapter flags, CPU/memory/disk limits and Claude volume freshness: passed. Full runtime checks still fail the configuration/service requirements above.
 - Real dependency vendoring, stopped source/package export and clean-VM frozen replay: passed. Integration still fails required host-service isolation.
 - Live cancellation: all four checks passed: provisioning, post-creation, snapshot export and the guest build phase.
 
-Only the harness, reviewed image preparation and trusted test drivers execute on the host. Fixture and generated-project Cargo commands execute inside microVMs. The default `spaceship-v2` and `smoke-v2` tasks select `linux-rust-v3`. A task's first allocation freezes its prompt and contract; resolved environment image identities are already fixed.
+Only the harness, reviewed image preparation and trusted test drivers execute on the host. Fixture and generated-project Cargo commands execute inside microVMs. The default `spaceship` and `smoke` tasks select `linux-rust`. Each allocation snapshots the current prompt, contract and environment lock; future edits do not rewrite archived inputs.
 
 ## References
 

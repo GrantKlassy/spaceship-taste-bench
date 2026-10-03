@@ -83,7 +83,7 @@ fn real_vendored_terminal_fixture_export() {
         "schema_version": 1, "protocol_version": config.mode.protocol(),
         "mode": config.mode, "accepted_limitations": config.mode.limitations(bench::agents::Agent::Codex),
         "run_id": format!("fixture-{}", uuid::Uuid::new_v4().simple()),
-        "task_version": "fixture", "prompt_sha256": "unused", "task_sha256": "unused", "input_sha256": {},
+        "task_name": "fixture", "prompt_sha256": "unused", "task_sha256": "unused", "input_sha256": {},
         "harness": {"commit": null,"dirty":null},
         "agent": {"name":"codex","cli_version":null,"requested_model":"fixture","reported_model":null,"invocation":[],"settings":{}},
         "environment": {"backend":"sbx","backend_version":null,"environment":config.environment,"image_digest":null,"rust":null,"architecture":null,"effective_limits":null,"network_policy":null,"isolation_verified":false},

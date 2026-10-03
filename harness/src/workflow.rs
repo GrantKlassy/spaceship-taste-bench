@@ -26,7 +26,7 @@ use std::{
 pub struct Attempt<'a> {
     pub agent: Agent,
     pub model: &'a str,
-    pub task_version: &'a str,
+    pub task_name: &'a str,
 }
 
 /// Reprocess an already stopped, retained image. Never restart generation or
@@ -57,16 +57,6 @@ pub fn recover<B: Sandbox>(
         !source.exists() && !audit.exists(),
         "refusing to overwrite an existing solution or recovery record"
     );
-    if let Some(expected) = run.input_sha256.get("environment.lock.json") {
-        let lock = repo
-            .join("environments")
-            .join(&config.environment)
-            .join("environment.lock.json");
-        ensure!(
-            archive::hash(&archive::read_regular(&lock, 1024 * 1024)?) == *expected,
-            "recovery environment differs from the frozen input"
-        );
-    }
     let raw = state.join("raw").join(id);
     archive::ensure_directory(&raw)?;
     let image = raw.join("stopped-image.tar");
@@ -128,17 +118,17 @@ pub fn run<B: Sandbox>(
     let Attempt {
         agent,
         model,
-        task_version,
+        task_name,
     } = attempt;
     crate::config::validate_model(model).map_err(anyhow::Error::msg)?;
-    agent.validate_model_environment(model, &config.environment)?;
-    let task = Task::load(repo, task_version)?;
+    agent.pinned_version(&config.environment)?;
+    let task = Task::load(repo, task_name)?;
     ensure!(
         task.contract.environment == config.environment,
         "task/environment mismatch"
     );
     let store = RunStore::open(repo)?;
-    store.check_frozen(&task)?;
+    store.verify_archives()?;
     backend.preflight(Role::Generation(agent))?;
     ensure!(
         !abort.load(Ordering::SeqCst),
@@ -171,7 +161,7 @@ pub fn run<B: Sandbox>(
         mode: config.mode,
         accepted_limitations: config.mode.limitations(agent),
         run_id: id.clone(),
-        task_version: task_version.into(),
+        task_name: task_name.into(),
         prompt_sha256: task.prompt_sha256.clone(),
         task_sha256: task.contract_sha256.clone(),
         input_sha256: inputs
@@ -214,7 +204,7 @@ pub fn run<B: Sandbox>(
         &archive::read_regular(&repo.join("templates/review.md"), 65536)?,
         &inputs,
     )?;
-    drop(store); // Task freeze is now represented by the atomic snapshot.
+    drop(store); // This attempt's inputs are now preserved in the atomic snapshot.
     atomic_json(
         &dir.join("replay.json"),
         &replay::Replay {

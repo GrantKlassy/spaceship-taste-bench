@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "environment": "linux-rust-v1",
-  "verified_at": "2026-09-21",
+  "environment": "linux-rust",
+  "verified_at": "2026-09-28",
   "rust_version": "1.97.0",
   "backend_version": "0.45.0",
   "upstream": {
@@ -14,8 +14,8 @@
   },
   "agents": {
     "claude": {
-      "version": "2.1.278",
-      "npm_integrity": "sha512-mfNRqC0GaEXqmP97NiwJBeYBmRuqe2VzgLUreUUaEhyJxJWx2Z6ClW1tBOncGNNXdhj6EY4LPvUIWP+oq311CA=="
+      "version": "2.1.280",
+      "npm_integrity": "sha512-EZlX8jqNf+e7q9v+UoPbLYAbEGth7aDbcTytHzPYYohbP/fCfrjboCbcv85ZYGEq1Rq7Amm8hXLhuCKxLsabwA=="
     },
     "codex": {
       "version": "0.155.1",
@@ -24,23 +24,23 @@
   },
   "images": {
     "base": {
-      "reference": "spaceship-bench-base:linux-rust-v1",
-      "image_id": "sha256:91df800504fbed41009f344c07afa9fbb1b43fb85c5b4493b8edc0d2c5c7626d"
+      "reference": "spaceship-bench-base:linux-rust",
+      "image_id": "sha256:2fac5a82b10b599e6ef0a603238a156ce32c4a867a635bf4f337c510cc921f71"
     },
     "claude": {
-      "reference": "spaceship-bench-claude:linux-rust-v1",
-      "image_id": "sha256:2d3110d469037952dfd952c21c940356ee532d9ac7e97a1a9f445428f0f05c67"
+      "reference": "spaceship-bench-claude:linux-rust",
+      "image_id": "sha256:91e1ba9c7e7c5fd268b5967433daf6d45c5c780a2bd92966fd580a657a215ee3"
     },
     "codex": {
-      "reference": "spaceship-bench-codex:linux-rust-v1",
-      "image_id": "sha256:f43578cd535bc753fedd78fae4144deee3d7e28a7373247e4dca6e5364758bcc"
+      "reference": "spaceship-bench-codex:linux-rust",
+      "image_id": "sha256:fea323e091e30c92de51c5637abc8c1345efb75627b1239dcb717270a65ca469"
     }
   },
   "build_status": "images_built_and_loaded; live_isolation_unverified",
+  "guest_architecture": "amd64",
+  "notes": "Real upstream registry pins and local Docker image IDs are recorded. Docker's containerd image store may report OCI index IDs rather than configuration IDs. These existing images were built, loaded and checked in fresh microVMs. Their contents are unchanged under the canonical linux-rust tags; the standalone Dockerfiles support future rebuilds. This does not certify strict isolation.",
   "native_packages": {
     "location_in_image": "/opt/bench/native-packages.tsv",
-    "content_pinned_by": "sha256:91df800504fbed41009f344c07afa9fbb1b43fb85c5b4493b8edc0d2c5c7626d"
-  },
-  "guest_architecture": "amd64",
-  "notes": "Real upstream registry pins and local Docker image IDs are recorded. Docker's containerd image store may report OCI index IDs rather than configuration IDs. All three images were built and loaded; this does not certify guest isolation."
+    "content_pinned_by": "sha256:2fac5a82b10b599e6ef0a603238a156ce32c4a867a635bf4f337c510cc921f71"
+  }
 }

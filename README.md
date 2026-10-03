@@ -1,10 +1,12 @@
 # Spaceship taste bench
 
-A chronological showcase of individual coding-agent attempts. Each agent gets the same frozen prompt, creates a Rust terminal spaceship game, and leaves an unedited submission. A person plays it and writes a subjective review. There are no scores, evaluator models, rankings, repeated-trial machinery, or generated reviews.
+A chronological showcase of individual coding-agent attempts. Each agent gets the current task prompt, archived exactly for that attempt, creates a Rust terminal spaceship game, and leaves an unedited submission. A person plays it and writes a subjective review. There are no scores, evaluator models, rankings, repeated-trial machinery, or generated reviews.
 
 **Status: no runs recorded.** The harness supports Codex and Claude Code subscription attempts in Docker pilot mode. The pilot records the accepted gateway/configuration/storage limitations; strict attempts remain blocked by certification requirements. Docker Sandboxes `sbx` 0.45.0 is the sole backend. Follow the [pilot workflow](docs/PILOT.md) for authentication, readiness checks and the first smoke task. See [verification status](docs/VERIFICATION.md) for harness and environment checks.
 
-The development host is Ubuntu 24.04 under WSL2, x86-64, with Rust 1.97.0, Docker Engine 29.8.1, Buildx 0.37.1, `sbx` 0.45.0, KVM access, Docker sign-in and a deny-all baseline. The default environment is `linux-rust-v3`: it preserves v2's Linux/Rust packages and Codex 0.155.1 runtime, and upgrades Claude Code to 2.1.280 for Opus 5.5. V1/v2 images remain preserved. The default task is `spaceship-v2`, whose prompt is byte-for-byte identical to `spaceship-v1`; its contract selects v3.
+The development host is Ubuntu 24.04 under WSL2, x86-64, with Rust 1.97.0, Docker Engine 29.8.1, Buildx 0.37.1, `sbx` 0.45.0, KVM access, Docker sign-in and a deny-all baseline. The `linux-rust` environment pins Claude Code 2.1.280 and Codex 0.155.1. The default task is `spaceship`; `smoke` provides a small end-to-end check.
+
+Tasks, environments and configs use stable names and are updated in place. Keep one current implementation of each; Git preserves code history, and run directories preserve each attempt's exact inputs.
 
 ## Install and check
 
@@ -24,6 +26,7 @@ To work on the harness:
 cargo +1.97.0 fmt --manifest-path harness/Cargo.toml -- --check
 cargo +1.97.0 clippy --manifest-path harness/Cargo.toml --all-targets --locked -- -D warnings
 cargo +1.97.0 test --manifest-path harness/Cargo.toml --locked
+python3 -m unittest discover -s environments/linux-rust -p 'test_*.py'
 ```
 
 Only the harness is compiled on the host. Submissions and their Cargo build scripts must run inside an external microVM.
@@ -48,10 +51,10 @@ Follow [SETUP.md](docs/SETUP.md), then copy `bench.example.toml` to ignored `ben
 Prepare images without starting an attempt:
 
 ```sh
-python3 environments/linux-rust-v3/prepare.py
+python3 environments/linux-rust/prepare.py
 ```
 
-This requires an independently installed Docker image builder and local `sbx` 0.45.0. It builds only trusted environment Dockerfiles from the preserved v2 images, loads their saved images into the sandbox store, and checks fresh built-in runtime startup/version before recording actual image IDs. It does not run a task, publish images, or authenticate. The lock now records the real amd64 images built on the development machine; their tar bundles remain local and ignored by Git. Both agent images inherit the same verified base layers. Preparation is refused after an attempt using that environment or after its image identities have been resolved; transfer preserved image bundles to another machine, or prepare a new environment version.
+This requires an independently installed Docker image builder and local `sbx` 0.45.0. It builds the trusted Dockerfiles directly from pinned upstream images, checks both agent package integrities, and verifies fresh built-in runtime startup/version before recording actual image IDs. Both agents inherit the same base layers. The current lock is already resolved; load the saved `build/*.tar` bundles to reuse those images. For an intentional update, edit the existing environment and reviewed CLI pins, then run `prepare.py --rebuild`. Retain any image bundles needed by archived attempts before rebuilding. Image preparation makes no model request.
 
 The requested authentication commands are:
 
@@ -66,31 +69,24 @@ bench auth claude
 
 Follow [PILOT.md](docs/PILOT.md). Select `mode = "docker-pilot"` in ignored
 `bench.local.toml`, authenticate with `bench auth codex`, and check readiness with
-`bench doctor --agent codex`. The separate `smoke-v2` task can exercise a real request and replay
-without freezing your game prompt. Pilot records explicitly state their accepted
+`bench doctor --agent codex`. The separate `smoke` task can exercise a real request and replay
+before using your game prompt. Pilot records explicitly state their accepted
 limitations and never claim strict isolation certification.
 
 For an Opus 5.5 attempt, use `bench auth claude`, then `bench doctor --agent claude`
-and `bench run --agent claude --model claude-opus-5-5 --task smoke-v2`.
-On a later UTC date, omit `--task smoke-v2` to use the spaceship prompt. Smoke
+and `bench run --agent claude --model claude-opus-5-5 --task smoke`.
+On a later UTC date, omit `--task smoke` to use the spaceship prompt. Smoke
 and game attempts share the one-run-per-agent/model/date limit.
 
 ## Strict attempts, once certification is complete
 
-The spaceship prompts and task contracts can be edited before their first attempt. Allocation freezes the selected task version. Prompt bytes, including the final newline, are delivered exactly once through stdin. Once frozen, make a new version for changes:
-
-```sh
-cp -r tasks/spaceship-v2 tasks/spaceship-v3
-# Edit spaceship-v3/prompt.md and change version in spaceship-v3/task.toml.
-```
+Edit `tasks/spaceship/prompt.md` and `task.toml` in place. Allocation snapshots the selected task and environment lock for that attempt. Later edits apply to future attempts; existing archives remain unchanged and checksum-verified. Prompt bytes, including the final newline, are delivered exactly once through stdin.
 
 In strict mode, after the blockers in [VERIFICATION.md](docs/VERIFICATION.md) are resolved:
 
 ```sh
 bench run --agent claude --model '<exact-model-id>'
 bench run --agent codex --model '<exact-model-id>'
-# Optional alternative prompt version:
-bench run --agent codex --model '<exact-model-id>' --task spaceship-v3
 ```
 
 Strict-mode commands currently fail **before prompt delivery**. The separate Docker pilot changes the recorded protocol rather than certifying strict isolation. There is no host/container fallback. Failed prerequisite checks are not attempts. A failure after allocation retains its run directory and reserves that agent/model/date; a retry with the same agent/model must use a later UTC date.
@@ -103,7 +99,7 @@ Recovery also selects the archived environment. After correcting an export probl
 
 ## Play and review
 
-With a prepared replay bundle, resize your actual terminal to the dimensions in the run's archived `task.toml` (**124 columns × 69 rows** for both spaceship task versions, 120×40 for both smoke task versions), then:
+With a prepared replay bundle, resize your actual terminal to the dimensions in the run's archived `task.toml` (**124 columns × 69 rows** for `spaceship`, 120×40 for `smoke`), then:
 
 ```sh
 bench play '<run-id>'
@@ -148,7 +144,7 @@ Private state defaults to `$XDG_STATE_HOME/spaceship-taste-bench`, or `~/.local/
 - `check-integration` prints transport passes and then fails on MCP/credential bindings: this is the observed backend limitation. `bench check-runtimes` separately checks each built-in agent image without a model call. It runs only fixed trusted fixtures and returns 1 when any required isolation property fails.
 - `required isolation is not established`: follow the engineering checklist in [VERIFICATION.md](docs/VERIFICATION.md). There is intentionally no configuration flag to suppress it.
 - Image identities are null: image preparation has not completed. Preserve resolved image tar files outside Git, not just their tags.
-- Frozen task/environment mismatch: use a new version; do not rewrite history.
+- Archived input checksum mismatch: restore the original archived bytes. Make future task/environment changes in their existing source directories.
 - Missing lockfile, non-crates.io dependency, or failed vendoring: retain the submission and failure metadata. Do not run `cargo generate-lockfile` or repair it.
 - Cleanup interrupted by a crash or SIGKILL: inspect private `raw/<run-id>/guest.json`, then `sbx rm --force <exact-recorded-guest-name>`. Never use broad `--all`/`reset` cleanup. SIGKILL/power loss cannot be handled by a userspace destructor.
 

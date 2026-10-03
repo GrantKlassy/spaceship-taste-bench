@@ -4,8 +4,7 @@ FROM docker.io/docker/sandbox-templates:shell@sha256:da4458d89a5f739df50a2a334c0
 USER root
 COPY --from=rust /usr/local/rustup /opt/rustup
 COPY --from=rust /usr/local/cargo /opt/cargo
-# First preparation resolves distro packages, captures dpkg versions and pins the
-# entire resulting image. Once attempts exist, prepare.py refuses to replace it.
+# Preparation records distro package versions and the complete image identity.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential clang cmake pkg-config libssl-dev libncurses-dev \
     locales util-linux python3 tmux ca-certificates \

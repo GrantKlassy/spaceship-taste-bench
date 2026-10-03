@@ -29,7 +29,7 @@ impl Sandbox for PackageFixture {
         Ok(EnvironmentIdentity {
             backend: "test-only".into(),
             backend_version: None,
-            environment: "linux-rust-v1".into(),
+            environment: "linux-rust".into(),
             image_digest: Some(format!("sha256:{}", "a".repeat(64))),
             rust: Some("1.97.0".into()),
             architecture: None,
@@ -92,10 +92,10 @@ fn setup() -> (tempfile::TempDir, tempfile::TempDir, Run) {
     let files = archive::inventory(&solution, 100000, 100).unwrap();
     let run: Run = serde_json::from_value(serde_json::json!({
         "schema_version": 1, "protocol_version": "single-attempt-v1", "run_id": "test-fixture",
-        "task_version": "fixture", "prompt_sha256": "unused", "task_sha256": "unused", "input_sha256": {},
+        "task_name": "fixture", "prompt_sha256": "unused", "task_sha256": "unused", "input_sha256": {},
         "harness": {"commit": null,"dirty":null},
         "agent": {"name":"codex","cli_version":null,"requested_model":"fixture","reported_model":null,"invocation":[],"settings":{}},
-        "environment": {"backend":"test-only","backend_version":null,"environment":"linux-rust-v1","image_digest":null,"rust":null,"architecture":null,"effective_limits":null,"network_policy":null,"isolation_verified":false},
+        "environment": {"backend":"test-only","backend_version":null,"environment":"linux-rust","image_digest":null,"rust":null,"architecture":null,"effective_limits":null,"network_policy":null,"isolation_verified":false},
         "requested_limits": Config::default().limits, "allocated_at":"2026-09-21T19:00:00Z","started_at":null,"ended_at":null,"elapsed_seconds":null,
         "outcome": bench::agents::Outcome::default(),
         "export": {"status":"complete","reason":null,"tree_sha256":archive::tree_hash(&files).unwrap(),"files":files},

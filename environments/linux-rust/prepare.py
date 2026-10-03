@@ -2,7 +2,9 @@
 """Build trusted images only, resolve their identities, load into local sbx.
 No generated submission is ever built by Docker on the host. No publishing/login.
 """
+import argparse
 import json
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 import shutil
@@ -12,7 +14,6 @@ import tempfile
 import uuid
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parent.parent
 LOCK = HERE / "environment.lock.json"
 
 
@@ -22,7 +23,7 @@ def command(*args, capture=False):
 
 
 def verify_runtime(kind, image, lock):
-    """Reject unusable candidate images before freezing the environment lock."""
+    """Reject unusable candidate images before updating the environment lock."""
     name = "bench-image-" + uuid.uuid4().hex
     agent = "shell" if kind == "base" else kind
     env = {key: value for key, value in os.environ.items() if key in (
@@ -59,35 +60,36 @@ def verify_runtime(kind, image, lock):
 
 
 def main():
-    if any((REPO / "runs").glob("*/run.json")):
-        raise SystemExit("Environment has archived attempts: preserve these images; create a new environment version before rebuilding.")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--rebuild", action="store_true",
+                        help="rebuild the current environment in place; retain image bundles needed by archived runs")
+    args = parser.parse_args()
+    lock = json.loads(LOCK.read_text())
+    if any(lock["images"].values()) and not args.rebuild:
+        raise SystemExit("Images already resolved. Load build/*.tar to reuse them, or pass --rebuild to update this environment in place.")
     if not shutil.which("docker") or not shutil.which("sbx"):
         raise SystemExit("Install Docker image-building tools and local sbx 0.45.0 first. See docs/SETUP.md. Nothing installed automatically.")
     if not command("sbx", "version", capture=True).startswith("sbx version: v0.45.0 "):
         raise SystemExit("Expected sbx 0.45.0; changed backends need verification.")
-    lock = json.loads(LOCK.read_text())
-    if any(lock["images"].values()):
-        raise SystemExit("Resolved images already recorded; preserve them. Use a new environment version for intentional rebuilds.")
     # Build contexts contain ONLY these Dockerfiles, never the parent checkout.
     build = HERE / "build"
     build.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="context-", dir=build) as context:
+    with tempfile.TemporaryDirectory(prefix="prepare-", dir=build) as stage:
+        context = Path(stage) / "context"
+        context.mkdir()
         for file in ("base.Dockerfile", "claude.Dockerfile", "codex.Dockerfile"):
             shutil.copyfile(HERE / file, Path(context) / file)
         resolved = {}
         base_layers = None
         for kind in ("base", "claude", "codex"):
             tag = f"spaceship-bench-{kind}:{lock['environment']}"
-            args = ["docker", "build", "--tag", tag, "--file", str(Path(context) / f"{kind}.Dockerfile")]
-            predecessor = lock["predecessor_images"][kind]
-            def check_predecessor():
-                current = json.loads(command("docker", "image", "inspect", predecessor["reference"], capture=True))[0]
-                if current["Id"] != predecessor["image_id"]:
-                    raise SystemExit("Preserved predecessor image identity changed; load its original archive.")
-            check_predecessor()
-            args += ["--build-arg", f"PREDECESSOR_IMAGE={predecessor['reference']}"]
-            command(*args, context)
-            check_predecessor()
+            build_args = ["docker", "build", "--tag", tag, "--file", str(Path(context) / f"{kind}.Dockerfile")]
+            if kind != "base":
+                pin = lock["agents"][kind]
+                build_args += ["--build-arg", f"BASE_IMAGE={resolved['base']['reference']}",
+                               "--build-arg", f"AGENT_VERSION={pin['version']}",
+                               "--build-arg", f"AGENT_NPM_INTEGRITY={pin['npm_integrity']}"]
+            command(*build_args, context)
             record = json.loads(command("docker", "image", "inspect", tag, capture=True))[0]
             image_id = record["Id"]
             if not image_id.startswith("sha256:") or len(image_id) != 71:
@@ -99,15 +101,19 @@ def main():
                 raise SystemExit("Agent image does not inherit the recorded base layers.")
             resolved[kind] = {"reference": tag, "image_id": image_id}
             # No container is executed on the host, even for environment probing.
-            output = build / f"{kind}.tar"
+            output = Path(stage) / f"{kind}.tar"
             command("docker", "image", "save", "--output", str(output), tag)
             output.chmod(0o600)
             command("sbx", "template", "load", str(output))
             verify_runtime(kind, resolved[kind], lock)
+        # Keep existing bundles intact if any candidate fails verification.
+        for kind in resolved:
+            (Path(stage) / f"{kind}.tar").replace(build / f"{kind}.tar")
         lock["images"] = resolved
+        lock["verified_at"] = datetime.now(timezone.utc).date().isoformat()
         lock["guest_architecture"] = record["Architecture"]
         lock["build_status"] = "images_built_and_loaded; live_isolation_unverified"
-        lock["notes"] = "Real upstream registry pins and local Docker image IDs are recorded. Docker's containerd image store may report OCI index IDs rather than configuration IDs. All three images were built and loaded; this does not certify guest isolation."
+        lock["notes"] = "Real upstream registry pins and local Docker image IDs are recorded. Docker's containerd image store may report OCI index IDs rather than configuration IDs. All three images were built, loaded and checked in fresh microVMs; this does not certify strict isolation."
         lock["native_packages"] = {"location_in_image": "/opt/bench/native-packages.tsv", "content_pinned_by": resolved["base"]["image_id"]}
         # Preserve Docker's actual IDs: the containerd store may report an OCI
         # index ID, whereas classic stores report an image configuration ID.
@@ -115,7 +121,7 @@ def main():
         with path.open("w") as f:
             json.dump(lock, f, indent=2); f.write("\n"); f.flush(); os.fsync(f.fileno())
         path.replace(LOCK)
-    print("Images prepared. Keep build/*.tar outside Git. bench doctor still requires live backend certification.")
+    print("Images prepared. Keep build/*.tar outside Git. Run bench doctor for pilot readiness; strict isolation certification remains separate.")
 
 
 if __name__ == "__main__":

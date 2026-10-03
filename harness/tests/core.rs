@@ -11,16 +11,16 @@ use std::{fs, io::Cursor, path::Path};
 
 fn repo() -> tempfile::TempDir {
     let tmp = tempfile::tempdir().unwrap();
-    fs::create_dir_all(tmp.path().join("tasks/spaceship-v1")).unwrap();
+    fs::create_dir_all(tmp.path().join("tasks/spaceship")).unwrap();
     fs::create_dir(tmp.path().join("templates")).unwrap();
     fs::write(
-        tmp.path().join("tasks/spaceship-v1/prompt.md"),
-        include_bytes!("../../tasks/spaceship-v1/prompt.md"),
+        tmp.path().join("tasks/spaceship/prompt.md"),
+        include_bytes!("../../tasks/spaceship/prompt.md"),
     )
     .unwrap();
     fs::write(
-        tmp.path().join("tasks/spaceship-v1/task.toml"),
-        include_bytes!("../../tasks/spaceship-v1/task.toml"),
+        tmp.path().join("tasks/spaceship/task.toml"),
+        include_bytes!("../../tasks/spaceship/task.toml"),
     )
     .unwrap();
     fs::write(
@@ -66,7 +66,7 @@ fn arguments_require_model_and_reject_traversal_or_shell_syntax() {
     ])
     .unwrap();
     assert!(
-        matches!(cli.command, bench::config::Commands::Run { task, .. } if task == "spaceship-v2")
+        matches!(cli.command, bench::config::Commands::Run { task, .. } if task == "spaceship")
     );
 }
 #[test]
@@ -160,16 +160,16 @@ fn model_slugs_collapse_separators_and_stay_bounded() {
 #[test]
 fn task_contract_and_prompt_bytes_are_not_rewritten() {
     let repo = repo();
-    let task = Task::load(repo.path(), "spaceship-v1").unwrap();
+    let task = Task::load(repo.path(), "spaceship").unwrap();
     assert_eq!(
         task.prompt,
-        include_bytes!("../../tasks/spaceship-v1/prompt.md")
+        include_bytes!("../../tasks/spaceship/prompt.md")
     );
     assert_eq!(
         task.prompt_sha256,
-        archive::hash(include_bytes!("../../tasks/spaceship-v1/prompt.md"))
+        archive::hash(include_bytes!("../../tasks/spaceship/prompt.md"))
     );
-    assert!(Task::load(repo.path(), "../spaceship-v1").is_err());
+    assert!(Task::load(repo.path(), "../spaceship").is_err());
     let original = String::from_utf8(task.contract_bytes).unwrap();
     for field in ["columns", "rows"] {
         let value = if field == "columns" {
@@ -178,34 +178,33 @@ fn task_contract_and_prompt_bytes_are_not_rewritten() {
             task.contract.rows
         };
         let changed = original.replace(&format!("{field} = {value}"), &format!("{field} = 0"));
-        fs::write(repo.path().join("tasks/spaceship-v1/task.toml"), changed).unwrap();
-        assert!(Task::load(repo.path(), "spaceship-v1").is_err());
+        fs::write(repo.path().join("tasks/spaceship/task.toml"), changed).unwrap();
+        assert!(Task::load(repo.path(), "spaceship").is_err());
     }
 }
 #[test]
 fn smoke_task_keeps_its_original_terminal_dimensions() {
     let repo = repo();
-    fs::create_dir(repo.path().join("tasks/smoke-v1")).unwrap();
+    fs::create_dir(repo.path().join("tasks/smoke")).unwrap();
     fs::write(
-        repo.path().join("tasks/smoke-v1/prompt.md"),
-        include_bytes!("../../tasks/smoke-v1/prompt.md"),
+        repo.path().join("tasks/smoke/prompt.md"),
+        include_bytes!("../../tasks/smoke/prompt.md"),
     )
     .unwrap();
     fs::write(
-        repo.path().join("tasks/smoke-v1/task.toml"),
-        include_bytes!("../../tasks/smoke-v1/task.toml"),
+        repo.path().join("tasks/smoke/task.toml"),
+        include_bytes!("../../tasks/smoke/task.toml"),
     )
     .unwrap();
-    let task = Task::load(repo.path(), "smoke-v1").unwrap();
+    let task = Task::load(repo.path(), "smoke").unwrap();
     assert_eq!((task.contract.columns, task.contract.rows), (120, 40));
 }
 #[test]
-fn freeze_rejects_corrupt_archived_metadata_instead_of_ignoring_it() {
+fn allocation_rejects_corrupt_archived_metadata_instead_of_ignoring_it() {
     let repo = repo();
-    let task = Task::load(repo.path(), "spaceship-v1").unwrap();
     let store = RunStore::open(repo.path()).unwrap();
     fs::create_dir(store.root.join("codex-bad-2026-09-21")).unwrap();
-    assert!(store.check_frozen(&task).is_err());
+    assert!(store.verify_archives().is_err());
 }
 #[test]
 fn adapters_send_exact_model_once_without_budgets_or_resume() {
@@ -576,51 +575,40 @@ fn opaque_whiteouts_do_not_delete_new_entries_when_listed_last() {
 }
 
 #[test]
-fn environment_versions_preserve_historical_pins_and_reject_unknown_versions() {
-    for environment in ["linux-rust-v1", "linux-rust-v2"] {
-        assert_eq!(
-            Agent::Claude.pinned_version(environment).unwrap(),
-            "2.1.278"
-        );
-        assert_eq!(Agent::Codex.pinned_version(environment).unwrap(), "0.155.1");
-    }
+fn current_environment_has_reviewed_pins_and_rejects_unknown_names() {
+    let config = Config::default();
+    assert_eq!(config.environment, "linux-rust");
     assert_eq!(
-        Agent::Claude.pinned_version("linux-rust-v3").unwrap(),
+        Agent::Claude.pinned_version(&config.environment).unwrap(),
         "2.1.280"
     );
     assert_eq!(
-        Agent::Codex.pinned_version("linux-rust-v3").unwrap(),
+        Agent::Codex.pinned_version(&config.environment).unwrap(),
         "0.155.1"
     );
-    assert!(Agent::Claude.pinned_version("linux-rust-v99").is_err());
+    assert!(Agent::Claude.pinned_version("unknown-environment").is_err());
     assert!(
-        Agent::Claude
-            .validate_model_environment("claude-opus-5-5", "linux-rust-v2")
-            .is_err()
+        Config {
+            environment: "unknown-environment".into(),
+            ..config
+        }
+        .validate()
+        .is_err()
     );
-    Agent::Claude
-        .validate_model_environment("claude-opus-5-5", "linux-rust-v3")
-        .unwrap();
-    Agent::Claude
-        .validate_model_environment("claude-opus-5", "linux-rust-v2")
-        .unwrap();
 }
 
 #[test]
-fn new_tasks_preserve_exact_prompts_and_change_only_version_and_environment() {
+fn canonical_tasks_select_the_current_environment() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    for stem in ["smoke", "spaceship"] {
-        let old = Task::load(root, &format!("{stem}-v1")).unwrap();
-        let new = Task::load(root, &format!("{stem}-v2")).unwrap();
-        assert_eq!(old.prompt, new.prompt);
-        assert_eq!(new.contract.environment, "linux-rust-v3");
-        assert_eq!(
-            String::from_utf8(old.contract_bytes)
-                .unwrap()
-                .replace(&format!("{stem}-v1"), &format!("{stem}-v2"))
-                .replace("linux-rust-v2", "linux-rust-v3")
-                .as_bytes(),
-            new.contract_bytes
-        );
+    let mut names: Vec<_> = fs::read_dir(root.join("tasks"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["smoke", "spaceship"]);
+    for name in ["smoke", "spaceship"] {
+        let task = Task::load(root, name).unwrap();
+        assert_eq!(task.contract.name, name);
+        assert_eq!(task.contract.environment, Config::default().environment);
     }
 }

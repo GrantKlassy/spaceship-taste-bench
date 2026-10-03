@@ -66,7 +66,7 @@ impl Terminal {
 pub fn supported_host() -> Result<()> {
     if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         bail!(
-            "this resolved environment requires Ubuntu 24.04+ amd64 with Linux-local sbx/KVM; macOS, native Windows and other architectures are not enabled in v1"
+            "this resolved environment requires Ubuntu 24.04+ amd64 with Linux-local sbx/KVM; macOS, native Windows and other architectures are not enabled"
         )
     }
     let os = std::fs::read_to_string("/etc/os-release")?;

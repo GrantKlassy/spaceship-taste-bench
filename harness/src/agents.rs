@@ -21,9 +21,8 @@ impl fmt::Display for Agent {
 impl Agent {
     pub fn pinned_version(self, environment: &str) -> Result<&'static str> {
         match (self, environment) {
-            (Self::Claude, "linux-rust-v1" | "linux-rust-v2") => Ok("2.1.278"),
-            (Self::Claude, "linux-rust-v3") => Ok("2.1.280"),
-            (Self::Codex, "linux-rust-v1" | "linux-rust-v2" | "linux-rust-v3") => Ok("0.155.1"),
+            (Self::Claude, "linux-rust") => Ok("2.1.280"),
+            (Self::Codex, "linux-rust") => Ok("0.155.1"),
             _ => bail!("no reviewed agent version for environment {environment}"),
         }
     }
@@ -33,15 +32,6 @@ impl Agent {
             Self::Claude => format!("{version} (Claude Code)"),
             Self::Codex => format!("codex-cli {version}"),
         })
-    }
-    pub fn validate_model_environment(self, model: &str, environment: &str) -> Result<()> {
-        let version = self.pinned_version(environment)?;
-        if self == Self::Claude && model.starts_with("claude-opus-5-5") && version == "2.1.278" {
-            bail!(
-                "Opus 5.5 requires Claude Code 2.1.280 or newer; use linux-rust-v3 with --task spaceship-v2 or --task smoke-v2"
-            );
-        }
-        Ok(())
     }
     /// Only ever passed to an externally isolated guest. Prompt bytes go to stdin.
     pub fn invocation(self, model: &str) -> Vec<String> {

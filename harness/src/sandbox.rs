@@ -312,14 +312,33 @@ pub struct Sbx {
 }
 impl Sbx {
     pub fn new(repo: &Path, config: &Config) -> Result<Self> {
-        config.validate()?;
-        let lock: EnvironmentLock = serde_json::from_slice(&archive::read_regular(
+        Self::with_lock(
+            repo,
+            config,
             &repo
                 .join("environments")
                 .join(&config.environment)
                 .join("environment.lock.json"),
-            1024 * 1024,
-        )?)?;
+        )
+    }
+    pub fn for_run(
+        repo: &Path,
+        config: &Config,
+        run_dir: &Path,
+        run: &crate::protocol::Run,
+    ) -> Result<Self> {
+        let path = run_dir.join("environment.lock.json");
+        ensure!(
+            run.input_sha256.get("environment.lock.json")
+                == Some(&archive::hash(&archive::read_regular(&path, 1024 * 1024)?)),
+            "archived environment checksum mismatch"
+        );
+        Self::with_lock(repo, config, &path)
+    }
+    fn with_lock(repo: &Path, config: &Config, path: &Path) -> Result<Self> {
+        config.validate()?;
+        let lock: EnvironmentLock =
+            serde_json::from_slice(&archive::read_regular(path, 1024 * 1024)?)?;
         lock.validate(&config.environment)?;
         Ok(Self {
             config: config.clone(),
@@ -444,7 +463,7 @@ impl Sbx {
             });
             match result {
                 Ok(()) => report.push(&id, Status::Pass, "Resolved image is present in the local sandbox store."),
-                Err(_) => report.push(&id, Status::Blocked, "Image missing or mismatched. Load the preserved environment archive; do not rebuild this frozen environment."),
+                Err(_) => report.push(&id, Status::Blocked, "Image missing or mismatched. Load the image bundle matching this environment lock."),
             }
         }
         for agent in [Agent::Claude, Agent::Codex] {
@@ -1586,17 +1605,14 @@ pub fn integration_check_abort(
 mod tests {
     use super::*;
     #[test]
-    fn environment_locks_retain_reviewed_versions_and_reject_pin_drift() {
-        for bytes in [
-            include_bytes!("../../environments/linux-rust-v1/environment.lock.json").as_slice(),
-            include_bytes!("../../environments/linux-rust-v2/environment.lock.json").as_slice(),
-            include_bytes!("../../environments/linux-rust-v3/environment.lock.json").as_slice(),
-        ] {
-            let mut lock: EnvironmentLock = serde_json::from_slice(bytes).unwrap();
-            lock.validate(&lock.environment).unwrap();
-            lock.agents.get_mut("claude").unwrap().version = "2.1.999".into();
-            assert!(lock.validate(&lock.environment).is_err());
-        }
+    fn environment_lock_rejects_pin_drift() {
+        let mut lock: EnvironmentLock = serde_json::from_slice(include_bytes!(
+            "../../environments/linux-rust/environment.lock.json"
+        ))
+        .unwrap();
+        lock.validate("linux-rust").unwrap();
+        lock.agents.get_mut("claude").unwrap().version = "2.1.999".into();
+        assert!(lock.validate("linux-rust").is_err());
     }
     #[test]
     fn failed_export_keeps_snapshot_and_private_diagnostic() {
@@ -1644,7 +1660,7 @@ mod tests {
             config: Config::default(),
             lock: EnvironmentLock {
                 schema_version: 1,
-                environment: "linux-rust-v2".into(),
+                environment: "linux-rust".into(),
                 rust_version: "1.97.0".into(),
                 backend_version: BACKEND_VERSION.into(),
                 agents: Default::default(),
@@ -1745,10 +1761,10 @@ mod tests {
     #[test]
     fn doctor_checks_actual_image_identity_not_only_a_tag_or_lock_entry() {
         let image = Image {
-            reference: "spaceship-bench-base:linux-rust-v2".into(),
+            reference: "spaceship-bench-base:linux-rust".into(),
             image_id: format!("sha256:{}", "ab".repeat(32)),
         };
-        let data = json!({"images":[{"repository":"docker.io/library/spaceship-bench-base", "tag":"linux-rust-v2", "id":"abababababab"}]});
+        let data = json!({"images":[{"repository":"docker.io/library/spaceship-bench-base", "tag":"linux-rust", "id":"abababababab"}]});
         serde_json::from_value::<Templates>(data.clone())
             .unwrap()
             .contains(&image)
@@ -1756,7 +1772,7 @@ mod tests {
         for (field, value) in [
             ("id", "cdcdcdcdcdcd"),
             ("id", "ab"),
-            ("tag", "linux-rust-v1"),
+            ("tag", "other-environment"),
             ("repository", "other"),
         ] {
             let mut changed = data.clone();

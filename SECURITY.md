@@ -46,7 +46,7 @@ The host reads tar data as data. It never runs a generated build script, executa
 
 - Stages into a fresh private directory, then renames on full success.
 - Accepts bounded ordinary files/directories; preserves file bytes and executable/non-executable distinction, plus empty directories.
-- Rejects absolute paths, traversal, backslashes, drive-like paths, controls, ambiguous names, case collisions, duplicate paths, non-ASCII filenames in v1, links, devices, FIFOs, sparse entries, PAX/GNU extension records and setuid/setgid/sticky metadata for selected source entries.
+- Rejects absolute paths, traversal, backslashes, drive-like paths, controls, ambiguous names, case collisions, duplicate paths, non-ASCII filenames, links, devices, FIFOs, sparse entries, PAX/GNU extension records and setuid/setgid/sticky metadata for selected source entries.
 - Does not restore ownership, timestamps, xattrs, ACLs or privileged modes. Normalizes ordinary modes to 0644/0755, then makes archived source read-only.
 - Bounds entry count, source bytes, transport bytes and replay size. Excluded entries in direct source-tar input are still validated and counted. Snapshot projection discards excluded paths without extracting their contents or applying their file types. This is deliberately strict and may reject otherwise buildable submissions containing unusual generated metadata.
 - Excludes components `.git`, `target`, `.claude`, `.codex`, `.ssh`, `.aws`, `.azure`, `.gnupg`, `.bench`, and files `auth.json`, `.credentials.json`, `.env`, `.env.*` (except `.env.example`). No blanket exclusion of `.cargo`, source dotfiles, or lockfiles.

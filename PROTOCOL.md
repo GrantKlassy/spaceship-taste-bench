@@ -20,9 +20,9 @@ above. Neither mode runs submissions or their Cargo build scripts on the host.
 
 Each record is one particular attempt at one release/model, followed by a person's observations. Hardware and elapsed time are contextual information. There are no scores, deadline budgets, repeated trials, selection of a best result, or statistical claims.
 
-## Inputs and freezing
+## Input snapshots
 
-The host controller selects an explicit agent, model identifier, task version and environment identity. It archives the task's exact UTF-8 prompt bytes and hashes them with SHA-256. No adapter adds design advice or rewrites the prompt. Tool-enabling settings are recorded separately.
+The host controller selects an explicit agent, model identifier, task name and environment identity. It archives the task's exact UTF-8 prompt bytes and hashes them with SHA-256. No adapter adds design advice or rewrites the prompt. Tool-enabling settings are recorded separately.
 
 Run directories use `<agent>-<model-slug>-YYYY-MM-DD`, with a UTC date and single
 hyphens. The model slug is lowercase, collapses punctuation to a single hyphen,
@@ -30,13 +30,13 @@ and is capped at 64 characters with trailing hyphens removed. Each agent/model
 slug can have one run per UTC date across all tasks, including smoke tasks.
 Allocation rejects an existing ID and preserves its artifacts.
 
-Before official attempts, edit the task freely. At allocation, a host file lock serializes freeze checking and creation of the input snapshot. Every subsequent allocation verifies the same version's prompt and task contract against existing metadata and archived bytes. Malformed records cause a failure, not a skipped check. A changed prompt or contract requires a new task directory/version. A changed environment lock under an existing environment identity is rejected. Machine-protection settings may change and are recorded per attempt.
+Tasks and environments are updated in place under stable names. At allocation, a host file lock serializes archive validation and creation of the input snapshot. Each run preserves its exact prompt, task contract, environment lock and settings with SHA-256 checksums. Later source edits affect future attempts only; existing snapshots are never rewritten. Malformed or modified archived inputs block allocation. Playback and recovery load the run's archived environment lock and require the recorded image identities. Machine-protection settings may change and are recorded per attempt.
 
 No parent `.git`, instructions, starter game, earlier solution, review, transcript, or run metadata is sent to a guest. A fresh neutral `/workspace` is initialized as an empty Git repository without a remote. Backend guest names are independent random identifiers, not the public run ID.
 
 ## The request
 
-Generation requires a new externally isolated guest and a new agent session. A reused clean image is permitted; a reused writable guest is not. CLI versions are pinned per environment, checked against the reviewed lock, and verified before task delivery. V1/v2 retain Claude Code 2.1.278; v3 selects 2.1.280. The model argument is passed exactly as selected; there is no fallback model or harness retry. Reported model identity is recorded only when the native stream supplies it. A provider can still reject an identifier; unavailable identity is null.
+Generation requires a new externally isolated guest and a new agent session. A reused clean image is permitted; a reused writable guest is not. CLI versions are pinned per environment, checked against the reviewed lock, and verified before task delivery. `linux-rust` selects Claude Code 2.1.280 and Codex 0.155.1. The model argument is passed exactly as selected; there is no fallback model or harness retry. Reported model identity is recorded only when the native stream supplies it. A provider can still reject an identifier; unavailable identity is null.
 
 The task is written once to stdin, then stdin is closed. The agent can edit, execute commands, compile, test, and revise during its natural tool loop inside the VM. The controller imposes no wall-clock, token, or cost deadline. It does not send follow-up messages, repair prompts, clarification answers, automatic resumes, or a second request. Provider/CLI internal transport recovery is part of that CLI's behavior, not an additional harness attempt.
 

@@ -23,7 +23,7 @@ pub const PROTOCOL: &str = "single-attempt-v1";
 #[serde(deny_unknown_fields)]
 pub struct TaskContract {
     pub schema_version: u32,
-    pub version: String,
+    pub name: String,
     pub environment: String,
     pub launch: Vec<String>,
     pub play_launch: Vec<String>,
@@ -35,11 +35,11 @@ pub struct TaskContract {
     pub dependencies: String,
 }
 impl TaskContract {
-    fn parse(bytes: &[u8], version: &str) -> Result<Self> {
+    fn parse(bytes: &[u8], name: &str) -> Result<Self> {
         let contract: Self = toml::from_str(std::str::from_utf8(bytes)?)?;
         ensure!(
-            contract.schema_version == SCHEMA && contract.version == version,
-            "task version/schema mismatch"
+            contract.schema_version == SCHEMA && contract.name == name,
+            "task name/schema mismatch"
         );
         ensure!(
             crate::config::supported_environment(&contract.environment)
@@ -71,12 +71,12 @@ pub struct Task {
     pub contract_sha256: String,
 }
 impl Task {
-    pub fn load(repo: &Path, version: &str) -> Result<Self> {
-        parse_component(version).map_err(anyhow::Error::msg)?;
-        let path = repo.join("tasks").join(version);
+    pub fn load(repo: &Path, name: &str) -> Result<Self> {
+        parse_component(name).map_err(anyhow::Error::msg)?;
+        let path = repo.join("tasks").join(name);
         archive::ensure_directory(&path)?;
         let contract_bytes = archive::read_regular(&path.join("task.toml"), 64 * 1024)?;
-        let contract = TaskContract::parse(&contract_bytes, version)?;
+        let contract = TaskContract::parse(&contract_bytes, name)?;
         let prompt = archive::read_regular(&path.join("prompt.md"), 1024 * 1024)?;
         ensure!(
             !prompt.is_empty() && std::str::from_utf8(&prompt).is_ok(),
@@ -189,7 +189,7 @@ pub struct Run {
     #[serde(default)]
     pub accepted_limitations: Vec<String>,
     pub run_id: String,
-    pub task_version: String,
+    pub task_name: String,
     pub prompt_sha256: String,
     pub task_sha256: String,
     pub input_sha256: BTreeMap<String, String>,
@@ -250,7 +250,7 @@ impl RunStore {
         lock.lock_exclusive()?;
         Ok(Self { root, _lock: lock })
     }
-    pub fn check_frozen(&self, task: &Task) -> Result<()> {
+    pub fn verify_archives(&self) -> Result<()> {
         for entry in fs::read_dir(&self.root)? {
             let entry = entry?;
             if entry.file_name().to_string_lossy().starts_with('.') {
@@ -260,33 +260,12 @@ impl RunStore {
                 entry.file_type()?.is_dir(),
                 "unexpected entry in runs; inspect it before allocating"
             );
-            let meta_path = entry.path().join("run.json");
-            let run: Run =
-                serde_json::from_slice(&archive::read_regular(&meta_path, 4 * 1024 * 1024)?)
-                    .context("invalid archived run metadata; task freeze cannot be verified")?;
-            if run.task_version == task.contract.version {
-                ensure!(
-                    run.prompt_sha256 == task.prompt_sha256
-                        && run.task_sha256 == task.contract_sha256,
-                    "task {} is frozen by {}; create a new tasks/<version>/ directory and update task.toml",
-                    task.contract.version,
-                    run.run_id
-                );
-                ensure!(
-                    archive::hash(&archive::read_regular(
-                        &entry.path().join("prompt.md"),
-                        1024 * 1024
-                    )?) == run.prompt_sha256,
-                    "archived prompt was modified; freeze verification failed"
-                );
-                ensure!(
-                    archive::hash(&archive::read_regular(
-                        &entry.path().join("task.toml"),
-                        65536
-                    )?) == run.task_sha256,
-                    "archived task contract was modified"
-                );
-            }
+            let id = entry.file_name();
+            load_run_metadata(
+                self.root.parent().context("runs parent missing")?,
+                id.to_str().context("invalid run directory name")?,
+            )
+            .context("invalid archived inputs; inspect the archive before allocating")?;
         }
         Ok(())
     }
@@ -297,25 +276,7 @@ impl RunStore {
         review: &[u8],
         inputs: &BTreeMap<String, Vec<u8>>,
     ) -> Result<PathBuf> {
-        self.check_frozen(task)?;
-        for entry in fs::read_dir(&self.root)? {
-            let entry = entry?;
-            if entry.file_name().to_string_lossy().starts_with('.') {
-                continue;
-            }
-            let old: Run = serde_json::from_slice(&archive::read_regular(
-                &entry.path().join("run.json"),
-                4 * 1024 * 1024,
-            )?)?;
-            if old.environment.environment == run.environment.environment {
-                ensure!(
-                    old.input_sha256.get("environment.lock.json")
-                        == run.input_sha256.get("environment.lock.json"),
-                    "environment identity is frozen by {}; create a new environment version",
-                    old.run_id
-                );
-            }
-        }
+        self.verify_archives()?;
         parse_component(&run.run_id).map_err(anyhow::Error::msg)?;
         let final_dir = self.root.join(&run.run_id);
         ensure!(
@@ -353,7 +314,7 @@ pub fn archived_task_contract(run_dir: &Path, run: &Run) -> Result<TaskContract>
         archive::hash(&bytes) == run.task_sha256,
         "task checksum mismatch"
     );
-    TaskContract::parse(&bytes, &run.task_version)
+    TaskContract::parse(&bytes, &run.task_name)
 }
 
 pub fn load_run_metadata(repo: &Path, id: &str) -> Result<(PathBuf, Run)> {

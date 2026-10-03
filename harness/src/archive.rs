@@ -118,10 +118,10 @@ pub fn safe_path(raw: &[u8]) -> Result<PathBuf> {
             .contains(&base.as_str()),
             "non-portable reserved filename"
         );
-        // Unicode normalization/case aliases differ across filesystems. V1 is deliberately ASCII.
+        // Unicode normalization/case aliases differ across filesystems.
         ensure!(
             part.is_ascii(),
-            "v1 export filenames must be ASCII (file contents may be UTF-8)"
+            "export filenames must be ASCII (file contents may be UTF-8)"
         );
     }
     let path = PathBuf::from(s);

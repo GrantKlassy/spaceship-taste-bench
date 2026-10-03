@@ -72,7 +72,7 @@ fn execute() -> Result<()> {
                 workflow::Attempt {
                     agent,
                     model: &model,
-                    task_version: &task,
+                    task_name: &task,
                 },
                 &abort,
             )?;
@@ -83,15 +83,15 @@ fn execute() -> Result<()> {
             config.environment = run.environment.environment.clone();
             let state = state_dir(&repo)?;
             let abort = process::signals()?;
-            let backend = Sbx::new(&repo, &config)?.with_abort(abort.clone());
+            let backend = Sbx::for_run(&repo, &config, &dir, &run)?.with_abort(abort.clone());
             replay::play(&backend, &config, &dir, &run, &state, &abort)
         }
         Commands::Recover { run_id } => {
-            let (_, run) = protocol::load_run_metadata(&repo, &run_id)?;
-            config.environment = run.environment.environment;
+            let (dir, run) = protocol::load_run_metadata(&repo, &run_id)?;
+            config.environment = run.environment.environment.clone();
             let state = state_dir(&repo)?;
             let abort = process::signals()?;
-            let backend = Sbx::new(&repo, &config)?.with_abort(abort.clone());
+            let backend = Sbx::for_run(&repo, &config, &dir, &run)?.with_abort(abort.clone());
             workflow::recover(&backend, &config, &repo, &state, &run_id, &abort)
         }
         Commands::CheckIntegration => {
